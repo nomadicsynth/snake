@@ -12,11 +12,13 @@ import sys
 import tempfile
 import shutil
 from pathlib import Path
+import pytest
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 
 # Import the training function
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from sb3_snake import train_sb3
+
 
 def run_short_training(log_dir):
     """Run a very short training to generate logs."""
@@ -70,6 +72,7 @@ def run_short_training(log_dir):
 
     return log_dir
 
+
 def find_event_file(log_dir):
     """Find the TensorBoard event file in the log directory."""
     for root, dirs, files in os.walk(log_dir):
@@ -77,6 +80,7 @@ def find_event_file(log_dir):
             if file.startswith("events.out.tfevents"):
                 return os.path.join(root, file)
     return None
+
 
 def check_metrics(log_dir):
     """Check if required metrics are present in the logs."""
@@ -123,7 +127,28 @@ def check_metrics(log_dir):
         print("All required eval metrics are present!")
         return True
 
+
+@pytest.mark.slow
+def test_eval_metrics_in_tensorboard():
+    """
+    Test that all required eval metrics are logged to TensorBoard.
+    This is marked as 'slow' since it runs actual training.
+    Run with: pytest -m slow
+    """
+    # Use a temporary directory for logs
+    temp_log_dir = tempfile.mkdtemp(prefix="test_tb_")
+    try:
+        log_dir = run_short_training(temp_log_dir)
+        assert log_dir is not None, "Training failed to complete"
+
+        success = check_metrics(log_dir)
+        assert success, "Not all required metrics were found in TensorBoard logs"
+    finally:
+        shutil.rmtree(temp_log_dir, ignore_errors=True)
+
+
 def main():
+    """Standalone entry point for running this test directly."""
     # Use a temporary directory for logs
     temp_log_dir = tempfile.mkdtemp(prefix="test_tb_")
     try:
@@ -135,6 +160,7 @@ def main():
         return 0 if success else 1
     finally:
         shutil.rmtree(temp_log_dir, ignore_errors=True)
+
 
 if __name__ == "__main__":
     sys.exit(main())
