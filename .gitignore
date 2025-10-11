@@ -9,3 +9,5 @@ models/
 *.pkl
 .venv/
 wandb/
+.env
+benchmark_results_*.json
