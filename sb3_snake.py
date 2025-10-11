@@ -110,7 +110,7 @@ class SnakeEnv(gym.Env):
         loop_max_period: int = 20,
     ):
         super().__init__()
-        # Allow overriding the environment's intrinsic per-step penalty
+        # Allow overriding the environment's default step penalty (discourage inefficiency)
         sg_kwargs = {"width": width, "height": height, "wall_collision": wall_collision, "num_apples": int(num_apples)}
         if step_penalty is not None:
             sg_kwargs["step_penalty"] = float(step_penalty)
@@ -966,10 +966,10 @@ def build_arg_parser():
     pt.add_argument("--height", type=int, default=DEFAULT_HEIGHT)
     pt.add_argument("--episodes", type=int, default=DEFAULT_NUM_EPISODES)
     pt.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
-    pt.add_argument("--gamma", type=float, default=DEFAULT_GAMMA)
-    pt.add_argument("--eps-start", type=float, default=DEFAULT_EPS_START)
-    pt.add_argument("--eps-end", type=float, default=DEFAULT_EPS_END)
-    pt.add_argument("--exploration-fraction", type=float, default=0.2, help="Fraction of total timesteps for epsilon decay")
+    pt.add_argument("--gamma", type=float, default=DEFAULT_GAMMA, help="Discount factor")
+    pt.add_argument("--eps-start", type=float, default=DEFAULT_EPS_START, help="initial value of random action probability")
+    pt.add_argument("--eps-end", type=float, default=DEFAULT_EPS_END, help="final value of random action probability")
+    pt.add_argument("--exploration-fraction", type=float, default=0.2, help="Fraction of total timesteps for exploration decay")
     pt.add_argument("--learning-starts", type=int, default=1000, help="Timesteps before learning starts")
     pt.add_argument("--target-update", type=int, default=DEFAULT_TARGET_UPDATE)
     pt.add_argument("--d-model", type=int, default=DEFAULT_HIDDEN_DIM)
@@ -979,8 +979,8 @@ def build_arg_parser():
     pt.add_argument("--lr", type=float, default=DEFAULT_LR, help="Initial learning rate (use with --lr-schedule)")
     pt.add_argument("--lr-schedule", choices=["constant", "cosine"], default="constant", help="Learning rate schedule: constant keeps LR fixed; cosine decays from --lr to --lr-end")
     pt.add_argument("--lr-end", type=float, default=0.0, help="Final learning rate when using --lr-schedule cosine")
-    pt.add_argument("--replay-size", type=int, default=DEFAULT_REPLAY_SIZE)
-    pt.add_argument("--log-interval", type=int, default=DEFAULT_LOG_INTERVAL)
+    pt.add_argument("--replay-size", type=int, default=DEFAULT_REPLAY_SIZE, help="Replay buffer size")
+    pt.add_argument("--log-interval", type=int, default=DEFAULT_LOG_INTERVAL, help="Episodes between logging and eval")
     pt.add_argument("--max-steps", type=int, default=DEFAULT_MAX_STEPS)
     pt.add_argument("--model-path", type=str, default="sb3_snake_transformer.zip")
     pt.add_argument("--seed", type=int, default=DEFAULT_SEED)
@@ -998,11 +998,12 @@ def build_arg_parser():
     pt.add_argument("--check-env", action="store_true", help="Run SB3 env checker before training")
 
     # Reward shaping controls
-    pt.add_argument("--step-penalty", type=float, default=None, help="Override env per-step penalty (e.g., -0.001 or 0.0). None uses env default.")
+    pt.add_argument("--step-penalty", type=float, default=None, help="Per-step penalty to discourage inefficiency (e.g., -0.001 or 0.0). None uses env default (-0.01).")
     pt.add_argument("--shaping-coef", type=float, default=0.0, help="Distance-to-food shaping coefficient (e.g., 0.02)")
     pt.add_argument("--apple-reward", type=float, default=None, help="Reward for eating food (default 10.0)")
     pt.add_argument("--death-penalty", type=float, default=None, help="Penalty for dying (default -10.0)")
     pt.add_argument("--max-score", type=int, default=None, help="Maximum score to cap episode length (None for no limit)")
+
     # Loop shaping controls
     pt.add_argument("--loop-penalty-coef", type=float, default=0.0, help="Per-step penalty scale when looping; multiplied by repeat count (m-1)")
     pt.add_argument("--loop-end-bonus", type=float, default=0.0, help="One-time bonus awarded when exiting a detected loop; multiplied by last repeat count")
@@ -1021,7 +1022,7 @@ def build_arg_parser():
     pp.add_argument("--width", type=int, default=DEFAULT_WIDTH)
     pp.add_argument("--height", type=int, default=DEFAULT_HEIGHT)
     pp.add_argument("--render-delay", type=float, default=DEFAULT_RENDER_DELAY)
-    pp.add_argument("--step-penalty", type=float, default=None, help="Override per-step penalty during play for consistency")
+    pp.add_argument("--step-penalty", type=float, default=None, help="Per-step penalty during play (for reward display consistency)")
     pp.add_argument("--shaping-coef", type=float, default=0.0, help="Shaping coefficient during play (has no effect on model outputs, only reward display)")
     pp.add_argument("--apple-reward", type=float, default=None, help="Reward for eating food during play (display only)")
     pp.add_argument("--death-penalty", type=float, default=None, help="Penalty for dying during play (display only)")

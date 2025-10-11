@@ -105,7 +105,7 @@ python snake.py reconstruct --logs episode_logs.pkl --index 0 --render-delay 0.1
 
 ## Notes
 
-- Environment uses wall collisions (no wrap-around) and a small step penalty to encourage progress.
+- Environment uses wall collisions (no wrap-around) and a small step penalty to discourage inefficient/aimless behavior.
 - Transformer treats each grid cell as a token with 3 channels: [snake, food, empty].
 - SB3 version includes built-in evaluation, model saving, and TensorBoard logging.
 - Training from scratch is non-trivial; start with smaller grids and more episodes, or tweak epsilon schedule.

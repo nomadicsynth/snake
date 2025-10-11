@@ -135,7 +135,7 @@ class SnakeGame:
 
         self.snake.insert(0, new_head)
 
-        reward = self.step_penalty  # small negative step to encourage progress
+        reward = self.step_penalty  # small penalty each step to discourage inefficient/aimless behavior
         self.ate_last_step = False
         # Eating logic with multiple apples
         if new_head in self.foods:
