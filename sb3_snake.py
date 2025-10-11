@@ -1,6 +1,7 @@
 import os
 import math
 import argparse
+import sys
 import numpy as np
 import torch
 import torch.nn as nn
@@ -1178,4 +1179,8 @@ class ScoreLimit(gym.Wrapper):
         return obs, reward, terminated, truncated, info
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nTraining interrupted. Exiting...")
+        sys.exit(0)
