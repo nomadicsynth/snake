@@ -215,19 +215,21 @@ def save_results_to_file(all_results, fast_mode=False):
 
 
 def save_best_config_to_env(all_results):
-    """Save the best configuration to .env file."""
-    # Find the best overall configuration
+    """Save the best configuration to .env file, preserving existing vars."""
+    # Find the best overall configuration by peak performance
     best_config = None
+    best_batch_size = None
     best_samples_per_sec = 0
+    best_full_result = None
     
     for config_name, results in all_results.items():
-        avg_samples = sum(r['samples_per_sec'] for r in results.values()) / len(results)
-        if avg_samples > best_samples_per_sec:
-            best_samples_per_sec = avg_samples
-            best_config = config_name
-            # Find best batch size for this config
-            best_batch_size = max(results.items(), key=lambda x: x[1]['samples_per_sec'])[0]
-            best_full_result = results[best_batch_size]
+        # Find the best batch size for this config
+        for batch_size, metrics in results.items():
+            if metrics['samples_per_sec'] > best_samples_per_sec:
+                best_samples_per_sec = metrics['samples_per_sec']
+                best_config = config_name
+                best_batch_size = batch_size
+                best_full_result = metrics
     
     if not best_config:
         return
@@ -237,33 +239,67 @@ def save_best_config_to_env(all_results):
     use_flash = 'flash' in best_config.lower()
     use_amp = 'bf16' in best_config.lower() or 'flash' in best_config.lower()
     
-    env_content = f"""# Optimal training settings from benchmark run {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-# Best configuration: {best_config}
-# Average throughput: {best_samples_per_sec:.1f} samples/sec
-
-# Batch size
-OPTIMAL_BATCH_SIZE={best_batch_size}
-
-# Optimization flags
-USE_TORCH_COMPILE={'true' if use_compile else 'false'}
-USE_FLASH_ATTENTION={'true' if use_flash else 'false'}
-USE_BF16={'true' if use_amp else 'false'}
-
-# Performance metrics
-THROUGHPUT_SAMPLES_PER_SEC={best_samples_per_sec:.1f}
-THROUGHPUT_UPDATES_PER_SEC={best_full_result['updates_per_sec']:.1f}
-GPU_MEMORY_GB={best_full_result['max_memory_gb']:.2f}
-"""
+    # Read existing .env and filter out our benchmark vars
+    existing_vars = {}
+    benchmark_vars = {
+        'OPTIMAL_BATCH_SIZE', 'USE_TORCH_COMPILE', 'USE_FLASH_ATTENTION', 
+        'USE_BF16', 'PEAK_THROUGHPUT_SAMPLES_PER_SEC', 'THROUGHPUT_UPDATES_PER_SEC', 
+        'GPU_MEMORY_GB'
+    }
     
+    if Path('.env').exists():
+        with open('.env', 'r') as f:
+            for line in f:
+                line = line.strip()
+                # Skip comments and empty lines
+                if not line or line.startswith('#'):
+                    continue
+                # Parse key=value
+                if '=' in line:
+                    key = line.split('=')[0].strip()
+                    # Only keep non-benchmark vars
+                    if key not in benchmark_vars:
+                        existing_vars[key] = line
+    
+    # Build new .env content
+    env_lines = []
+    
+    # Add existing vars first
+    if existing_vars:
+        env_lines.append("# Existing configuration")
+        for line in existing_vars.values():
+            env_lines.append(line)
+        env_lines.append("")
+    
+    # Add benchmark results
+    env_lines.append(f"# Optimal training settings from benchmark run {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    env_lines.append(f"# Best configuration: {best_config}")
+    env_lines.append(f"# Peak throughput: {best_samples_per_sec:.1f} samples/sec")
+    env_lines.append("")
+    env_lines.append("# Batch size")
+    env_lines.append(f"OPTIMAL_BATCH_SIZE={best_batch_size}")
+    env_lines.append("")
+    env_lines.append("# Optimization flags")
+    env_lines.append(f"USE_TORCH_COMPILE={'true' if use_compile else 'false'}")
+    env_lines.append(f"USE_FLASH_ATTENTION={'true' if use_flash else 'false'}")
+    env_lines.append(f"USE_BF16={'true' if use_amp else 'false'}")
+    env_lines.append("")
+    env_lines.append("# Performance metrics")
+    env_lines.append(f"PEAK_THROUGHPUT_SAMPLES_PER_SEC={best_samples_per_sec:.1f}")
+    env_lines.append(f"THROUGHPUT_UPDATES_PER_SEC={best_full_result['updates_per_sec']:.1f}")
+    env_lines.append(f"GPU_MEMORY_GB={best_full_result['max_memory_gb']:.2f}")
+    
+    # Write to .env
     with open('.env', 'w') as f:
-        f.write(env_content)
+        f.write('\n'.join(env_lines) + '\n')
     
     print(f"\n📝 Best configuration saved to .env:")
+    print(f"   Config: {best_config}")
     print(f"   Batch size: {best_batch_size}")
     print(f"   torch.compile: {use_compile}")
     print(f"   FlashAttention: {use_flash}")
     print(f"   BF16: {use_amp}")
-    print(f"   Throughput: {best_samples_per_sec:.1f} samples/sec")
+    print(f"   Peak throughput: {best_samples_per_sec:.1f} samples/sec")
     
 
 if __name__ == "__main__":
