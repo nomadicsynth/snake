@@ -5,23 +5,27 @@ This document describes the performance optimization features that have been imp
 ## Features Implemented
 
 ### 1. **Automatic Batch Size from Benchmarks**
+
 - Default batch size is now read from `OPTIMAL_BATCH_SIZE` in `.env`
 - Current optimal value: **8192** (from benchmark results)
 - Can still be overridden with `--batch-size` CLI argument
 
 ### 2. **torch.compile() Support**
+
 - Controlled by `USE_TORCH_COMPILE` environment variable
 - Compiles the policy network, Q-network, and target Q-network for potential speedup
 - Uses `mode="reduce-overhead"` for optimal performance
 - Can be disabled with `--no-compile` flag
 
 ### 3. **FlashAttention (SDPA Backend)**
+
 - Controlled by `USE_FLASH_ATTENTION` environment variable
 - Uses PyTorch's Scaled Dot-Product Attention with FlashAttention backend
 - Provides memory-efficient attention computation
 - Can be disabled with `--no-flash-attention` flag
 
 ### 4. **BF16 Mixed Precision Training**
+
 - Controlled by `USE_BF16` environment variable
 - Uses automatic mixed precision (AMP) with bfloat16 dtype
 - Reduces memory usage and increases throughput
@@ -38,6 +42,7 @@ USE_BF16=true
 ```
 
 Based on benchmark results, this configuration provides:
+
 - **Peak throughput**: 24,334.8 samples/sec
 - **Updates/sec**: 3.0
 - **GPU memory**: 10.99 GB
@@ -45,17 +50,20 @@ Based on benchmark results, this configuration provides:
 ## Usage
 
 ### Default Usage (uses .env settings)
+
 ```bash
 python sb3_snake.py train --episodes 1000
 ```
 
 This will automatically use:
+
 - Batch size: 8192
 - FlashAttention: Enabled
 - BF16: Enabled
 - torch.compile: Disabled
 
 ### Override Individual Settings
+
 ```bash
 # Disable FlashAttention
 python sb3_snake.py train --episodes 1000 --no-flash-attention
@@ -71,11 +79,13 @@ python sb3_snake.py train --episodes 1000 --batch-size 4096 --no-bf16 --no-flash
 ```
 
 ### Testing Your Configuration
+
 ```bash
 python test_optimizations.py
 ```
 
 This will show:
+
 - Current environment variable values
 - PyTorch feature availability
 - What optimizations will be active
@@ -85,7 +95,7 @@ This will show:
 
 When training starts, you'll see a configuration summary:
 
-```
+```text
 ============================================================
 Training Configuration Summary:
 ============================================================
@@ -102,6 +112,7 @@ BF16 (mixed precision): ✓ Enabled
 ## Implementation Details
 
 ### Environment Variable Loading
+
 ```python
 from dotenv import load_dotenv
 load_dotenv()
@@ -119,6 +130,7 @@ ENV_USE_BF16 = get_env_bool('USE_BF16', False)
 ```
 
 ### torch.compile() Application
+
 ```python
 if use_compile and hasattr(torch, 'compile'):
     model.policy.features_extractor = torch.compile(
@@ -131,6 +143,7 @@ if use_compile and hasattr(torch, 'compile'):
 ```
 
 ### FlashAttention Context
+
 ```python
 def get_sdpa_context():
     if use_flash and hasattr(torch.nn.attention, 'sdpa_kernel'):
@@ -140,6 +153,7 @@ def get_sdpa_context():
 ```
 
 ### BF16 Mixed Precision
+
 ```python
 with get_sdpa_context():
     if use_bf16 and torch.cuda.is_available():
@@ -165,9 +179,11 @@ wandb_config = {
 ## Requirements
 
 Added to `requirements.txt`:
+
 - `python-dotenv` - for loading `.env` files
 
 Existing requirements for optimizations:
+
 - PyTorch 2.0+ for `torch.compile()`
 - PyTorch 2.0+ for FlashAttention SDPA backend
 - CUDA GPU with BF16 support (e.g., RTX 4090)
@@ -188,19 +204,25 @@ From benchmark results (`benchmark_results_full_20251012_001032.json`):
 ## Troubleshooting
 
 ### OOM (Out of Memory) Errors
+
 If you encounter OOM errors with batch size 8192:
+
 ```bash
 python sb3_snake.py train --batch-size 4096
 ```
 
 ### Compilation Warnings
+
 If you see torch.compile warnings, you can disable it:
+
 ```bash
 python sb3_snake.py train --no-compile
 ```
 
 ### CUDA/CUDNN Errors
+
 If you encounter CUDA errors with FlashAttention:
+
 ```bash
 python sb3_snake.py train --no-flash-attention
 ```
@@ -208,6 +230,7 @@ python sb3_snake.py train --no-flash-attention
 ## Future Enhancements
 
 Potential future improvements:
+
 1. Add support for other SDPA backends (efficient_attention, math)
 2. Add torch.compile mode selection (default, reduce-overhead, max-autotune)
 3. Auto-detect optimal batch size based on available GPU memory
