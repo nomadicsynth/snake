@@ -267,143 +267,148 @@ GPU_MEMORY_GB={best_full_result['max_memory_gb']:.2f}
     
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Benchmark DQN training with different batch sizes and optimizations')
-    parser.add_argument('--fast', action='store_true', help='Use fast mode with reduced steps (~3x faster)')
-    args = parser.parse_args()
-    
-    print("RTX 4090 Batch Size Benchmark")
-    print(f"GPU: {torch.cuda.get_device_name(0)}")
-    print(f"Total VRAM: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
-    print(f"PyTorch version: {torch.__version__}\n")
-    
-    # Check available features
-    has_compile = hasattr(torch, 'compile')
-    has_sdpa = hasattr(torch.nn.functional, 'scaled_dot_product_attention')
-    has_flash = hasattr(torch.nn.attention, 'sdpa_kernel')
-    has_bf16 = torch.cuda.is_bf16_supported() if torch.cuda.is_available() else False
-    
-    print("Available optimizations:")
-    print(f"  - torch.compile(): {'✓' if has_compile else '✗'}")
-    print(f"  - SDPA (Scaled Dot-Product Attention): {'✓' if has_sdpa else '✗'}")
-    print(f"  - FlashAttention backend control: {'✓' if has_flash else '✗'}")
-    print(f"  - BFloat16 (for FlashAttention): {'✓' if has_bf16 else '✗'}")
-    print()
-    
-    if has_compile and has_flash and has_bf16:
-        # Test all combinations with bf16 support
-        all_results = {}
+    try:
+        parser = argparse.ArgumentParser(description='Benchmark DQN training with different batch sizes and optimizations')
+        parser.add_argument('--fast', action='store_true', help='Use fast mode with reduced steps (~3x faster)')
+        args = parser.parse_args()
         
-        print("=" * 80)
-        print("Test 1/4: Baseline (fp32, no compile, auto SDPA)")
-        print("=" * 80)
-        results_baseline = quick_benchmark(use_compile=False, sdpa_backend=None, use_amp=False, fast_mode=args.fast)
-        all_results['baseline_fp32'] = results_baseline
+        print("RTX 4090 Batch Size Benchmark")
+        print(f"GPU: {torch.cuda.get_device_name(0)}")
+        print(f"Total VRAM: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
+        print(f"PyTorch version: {torch.__version__}\n")
         
-        print("\n\n" + "=" * 80)
-        print("Test 2/4: BF16 + FlashAttention only")
-        print("=" * 80)
-        results_flash = quick_benchmark(use_compile=False, sdpa_backend='flash_attention', use_amp=True, fast_mode=args.fast)
-        all_results['bf16_flash'] = results_flash
+        # Check available features
+        has_compile = hasattr(torch, 'compile')
+        has_sdpa = hasattr(torch.nn.functional, 'scaled_dot_product_attention')
+        has_flash = hasattr(torch.nn.attention, 'sdpa_kernel')
+        has_bf16 = torch.cuda.is_bf16_supported() if torch.cuda.is_available() else False
         
-        print("\n\n" + "=" * 80)
-        print("Test 3/4: BF16 + torch.compile() (auto SDPA)")
-        print("=" * 80)
-        results_compile = quick_benchmark(use_compile=True, sdpa_backend=None, use_amp=True, fast_mode=args.fast)
-        all_results['bf16_compile'] = results_compile
+        print("Available optimizations:")
+        print(f"  - torch.compile(): {'✓' if has_compile else '✗'}")
+        print(f"  - SDPA (Scaled Dot-Product Attention): {'✓' if has_sdpa else '✗'}")
+        print(f"  - FlashAttention backend control: {'✓' if has_flash else '✗'}")
+        print(f"  - BFloat16 (for FlashAttention): {'✓' if has_bf16 else '✗'}")
+        print()
         
-        print("\n\n" + "=" * 80)
-        print("Test 4/4: BF16 + torch.compile() + FlashAttention")
-        print("=" * 80)
-        results_compile_flash = quick_benchmark(use_compile=True, sdpa_backend='flash_attention', use_amp=True, fast_mode=args.fast)
-        all_results['bf16_compile_flash'] = results_compile_flash
-        
-        # Comprehensive comparison
-        print("\n\n" + "=" * 80)
-        print("COMPREHENSIVE COMPARISON")
-        print("=" * 80)
-        print(f"{'Batch':<8} {'Baseline':<12} {'Flash':<12} {'Compile':<12} {'Both':<12} {'Best Speedup':<15}")
-        print("-" * 80)
-        
-        for bs in results_baseline.keys():
-            baseline = results_baseline[bs]['samples_per_sec']
-            flash = results_flash[bs]['samples_per_sec']
-            compile = results_compile[bs]['samples_per_sec']
-            both = results_compile_flash[bs]['samples_per_sec']
+        if has_compile and has_flash and has_bf16:
+            # Test all combinations with bf16 support
+            all_results = {}
             
-            best = max(baseline, flash, compile, both)
-            speedup = (best / baseline - 1) * 100
+            print("=" * 80)
+            print("Test 1/4: Baseline (fp32, no compile, auto SDPA)")
+            print("=" * 80)
+            results_baseline = quick_benchmark(use_compile=False, sdpa_backend=None, use_amp=False, fast_mode=args.fast)
+            all_results['baseline_fp32'] = results_baseline
             
-            print(f"{bs:<8} {baseline:<12.1f} {flash:<12.1f} {compile:<12.1f} {both:<12.1f} {speedup:+.1f}%")
-        
-        # Overall comparison
-        avg_baseline = sum(r['samples_per_sec'] for r in results_baseline.values()) / len(results_baseline)
-        avg_flash = sum(r['samples_per_sec'] for r in results_flash.values()) / len(results_flash)
-        avg_compile = sum(r['samples_per_sec'] for r in results_compile.values()) / len(results_compile)
-        avg_both = sum(r['samples_per_sec'] for r in results_compile_flash.values()) / len(results_compile_flash)
-        
-        print("\n" + "=" * 80)
-        print("AVERAGE PERFORMANCE (samples/sec = training throughput):")
-        print(f"  Baseline (fp32):             {avg_baseline:.1f} samples/sec")
-        print(f"  BF16 + FlashAttention:       {avg_flash:.1f} samples/sec ({(avg_flash/avg_baseline-1)*100:+.1f}%)")
-        print(f"  BF16 + torch.compile():      {avg_compile:.1f} samples/sec ({(avg_compile/avg_baseline-1)*100:+.1f}%)")
-        print(f"  BF16 + Both combined:        {avg_both:.1f} samples/sec ({(avg_both/avg_baseline-1)*100:+.1f}%)")
-        print("=" * 80)
-        
-        # Save results
-        save_results_to_file(all_results, fast_mode=args.fast)
-        save_best_config_to_env(all_results)
-        
-    elif has_compile:
-        # Only compile available
-        all_results = {}
-        
-        print("=" * 80)
-        print("Running benchmark WITHOUT torch.compile()")
-        print("=" * 80)
-        results_no_compile = quick_benchmark(use_compile=False, fast_mode=args.fast)
-        all_results['no_compile'] = results_no_compile
-        
-        print("\n\n" + "=" * 80)
-        print("Running benchmark WITH torch.compile()")
-        print("=" * 80)
-        results_compile = quick_benchmark(use_compile=True, fast_mode=args.fast)
-        all_results['compile'] = results_compile
-        
-        # Comparison
-        print("\n\n" + "=" * 80)
-        print("COMPARISON: torch.compile() vs Normal")
-        print("=" * 80)
-        print(f"{'Batch Size':<12} {'Normal (samp/s)':<18} {'Compiled (samp/s)':<18} {'Speedup':<12}")
-        print("-" * 80)
-        
-        for bs in results_no_compile.keys():
-            normal_sps = results_no_compile[bs]['samples_per_sec']
-            compiled_sps = results_compile[bs]['samples_per_sec']
-            speedup = (compiled_sps / normal_sps - 1) * 100
-            speedup_str = f"{speedup:+.1f}%"
+            print("\n\n" + "=" * 80)
+            print("Test 2/4: BF16 + FlashAttention only")
+            print("=" * 80)
+            results_flash = quick_benchmark(use_compile=False, sdpa_backend='flash_attention', use_amp=True, fast_mode=args.fast)
+            all_results['bf16_flash'] = results_flash
             
-            print(f"{bs:<12} {normal_sps:<18.1f} {compiled_sps:<18.1f} {speedup_str:<12}")
-        
-        # Overall speedup
-        avg_normal = sum(r['samples_per_sec'] for r in results_no_compile.values()) / len(results_no_compile)
-        avg_compiled = sum(r['samples_per_sec'] for r in results_compile.values()) / len(results_compile)
-        overall_speedup = (avg_compiled / avg_normal - 1) * 100
-        
-        print("\n" + "=" * 80)
-        print(f"Average speedup with torch.compile(): {overall_speedup:+.1f}%")
-        print("=" * 80)
-        
-        # Save results
-        save_results_to_file(all_results, fast_mode=args.fast)
-        save_best_config_to_env(all_results)
-        
-    else:
-        print(f"⚠️  torch.compile() not available (requires PyTorch 2.0+)")
-        print("Running benchmark without torch.compile()\n")
-        all_results = {}
-        results = quick_benchmark(use_compile=False, fast_mode=args.fast)
-        all_results['baseline'] = results
-        
-        # Save results
-        save_results_to_file(all_results, fast_mode=args.fast)
-        save_best_config_to_env(all_results)
+            print("\n\n" + "=" * 80)
+            print("Test 3/4: BF16 + torch.compile() (auto SDPA)")
+            print("=" * 80)
+            results_compile = quick_benchmark(use_compile=True, sdpa_backend=None, use_amp=True, fast_mode=args.fast)
+            all_results['bf16_compile'] = results_compile
+            
+            print("\n\n" + "=" * 80)
+            print("Test 4/4: BF16 + torch.compile() + FlashAttention")
+            print("=" * 80)
+            results_compile_flash = quick_benchmark(use_compile=True, sdpa_backend='flash_attention', use_amp=True, fast_mode=args.fast)
+            all_results['bf16_compile_flash'] = results_compile_flash
+            
+            # Comprehensive comparison
+            print("\n\n" + "=" * 80)
+            print("COMPREHENSIVE COMPARISON")
+            print("=" * 80)
+            print(f"{'Batch':<8} {'Baseline':<12} {'Flash':<12} {'Compile':<12} {'Both':<12} {'Best Speedup':<15}")
+            print("-" * 80)
+            
+            for bs in results_baseline.keys():
+                baseline = results_baseline[bs]['samples_per_sec']
+                flash = results_flash[bs]['samples_per_sec']
+                compile = results_compile[bs]['samples_per_sec']
+                both = results_compile_flash[bs]['samples_per_sec']
+                
+                best = max(baseline, flash, compile, both)
+                speedup = (best / baseline - 1) * 100
+                
+                print(f"{bs:<8} {baseline:<12.1f} {flash:<12.1f} {compile:<12.1f} {both:<12.1f} {speedup:+.1f}%")
+            
+            # Overall comparison
+            avg_baseline = sum(r['samples_per_sec'] for r in results_baseline.values()) / len(results_baseline)
+            avg_flash = sum(r['samples_per_sec'] for r in results_flash.values()) / len(results_flash)
+            avg_compile = sum(r['samples_per_sec'] for r in results_compile.values()) / len(results_compile)
+            avg_both = sum(r['samples_per_sec'] for r in results_compile_flash.values()) / len(results_compile_flash)
+            
+            print("\n" + "=" * 80)
+            print("AVERAGE PERFORMANCE (samples/sec = training throughput):")
+            print(f"  Baseline (fp32):             {avg_baseline:.1f} samples/sec")
+            print(f"  BF16 + FlashAttention:       {avg_flash:.1f} samples/sec ({(avg_flash/avg_baseline-1)*100:+.1f}%)")
+            print(f"  BF16 + torch.compile():      {avg_compile:.1f} samples/sec ({(avg_compile/avg_baseline-1)*100:+.1f}%)")
+            print(f"  BF16 + Both combined:        {avg_both:.1f} samples/sec ({(avg_both/avg_baseline-1)*100:+.1f}%)")
+            print("=" * 80)
+            
+            # Save results
+            save_results_to_file(all_results, fast_mode=args.fast)
+            save_best_config_to_env(all_results)
+            
+        elif has_compile:
+            # Only compile available
+            all_results = {}
+            
+            print("=" * 80)
+            print("Running benchmark WITHOUT torch.compile()")
+            print("=" * 80)
+            results_no_compile = quick_benchmark(use_compile=False, fast_mode=args.fast)
+            all_results['no_compile'] = results_no_compile
+            
+            print("\n\n" + "=" * 80)
+            print("Running benchmark WITH torch.compile()")
+            print("=" * 80)
+            results_compile = quick_benchmark(use_compile=True, fast_mode=args.fast)
+            all_results['compile'] = results_compile
+            
+            # Comparison
+            print("\n\n" + "=" * 80)
+            print("COMPARISON: torch.compile() vs Normal")
+            print("=" * 80)
+            print(f"{'Batch Size':<12} {'Normal (samp/s)':<18} {'Compiled (samp/s)':<18} {'Speedup':<12}")
+            print("-" * 80)
+            
+            for bs in results_no_compile.keys():
+                normal_sps = results_no_compile[bs]['samples_per_sec']
+                compiled_sps = results_compile[bs]['samples_per_sec']
+                speedup = (compiled_sps / normal_sps - 1) * 100
+                speedup_str = f"{speedup:+.1f}%"
+                
+                print(f"{bs:<12} {normal_sps:<18.1f} {compiled_sps:<18.1f} {speedup_str:<12}")
+            
+            # Overall speedup
+            avg_normal = sum(r['samples_per_sec'] for r in results_no_compile.values()) / len(results_no_compile)
+            avg_compiled = sum(r['samples_per_sec'] for r in results_compile.values()) / len(results_compile)
+            overall_speedup = (avg_compiled / avg_normal - 1) * 100
+            
+            print("\n" + "=" * 80)
+            print(f"Average speedup with torch.compile(): {overall_speedup:+.1f}%")
+            print("=" * 80)
+            
+            # Save results
+            save_results_to_file(all_results, fast_mode=args.fast)
+            save_best_config_to_env(all_results)
+            
+        else:
+            print(f"⚠️  torch.compile() not available (requires PyTorch 2.0+)")
+            print("Running benchmark without torch.compile()\n")
+            all_results = {}
+            results = quick_benchmark(use_compile=False, fast_mode=args.fast)
+            all_results['baseline'] = results
+            
+            # Save results
+            save_results_to_file(all_results, fast_mode=args.fast)
+            save_best_config_to_env(all_results)
+    except KeyboardInterrupt:
+        print("\nBenchmarking interrupted by user.")
+        print("Exiting gracefully...")
+ 
