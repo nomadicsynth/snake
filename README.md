@@ -57,6 +57,35 @@ Artifacts:
 - Custom: `snake_transformer.pth`, `episode_logs.pkl`, `training_stats.png`
 - SB3: `sb3_snake_transformer.zip`, TensorBoard logs in `./tb_snake`, eval logs in `./eval_logs`, best model in `./models`
 
+## Weights & Biases Logging (SB3 only)
+
+Enable W&B logging to track experiments:
+
+```bash
+# First login to wandb (one-time setup)
+wandb login
+
+# Train with wandb logging
+python sb3_snake.py train --wandb --wandb-project "my-snake-project" --wandb-run-name "experiment-1"
+
+# With custom tags for organization
+python sb3_snake.py train --wandb --wandb-tags baseline transformer cosine-lr
+```
+
+W&B will log:
+
+- All training metrics (episode rewards, scores, lengths)
+- Loop detection metrics (if loop penalties are enabled)
+- Evaluation metrics
+- Hyperparameters
+- TensorBoard logs (synced automatically)
+
+The `--wandb` flag enables logging. Additional options:
+
+- `--wandb-project`: W&B project name (default: "snake-rl")
+- `--wandb-run-name`: Custom run name (auto-generated if not specified)
+- `--wandb-tags`: Space-separated tags for organizing runs
+
 ## Play
 
 ```bash

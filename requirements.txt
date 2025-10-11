@@ -5,3 +5,4 @@ pytest
 tqdm
 gymnasium
 stable-baselines3[extra]
+wandb

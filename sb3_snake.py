@@ -7,6 +7,11 @@ import torch.nn as nn
 import gymnasium as gym
 from gymnasium import spaces
 from typing import Optional
+import warnings
+
+# Suppress pydantic warnings from stable-baselines3
+warnings.filterwarnings("ignore", category=UserWarning, module="pydantic._internal._generate_schema")
+
 from stable_baselines3 import DQN
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.callbacks import CallbackList, BaseCallback
@@ -16,6 +21,7 @@ from stable_baselines3.common.monitor import Monitor
 from gymnasium.wrappers import TimeLimit
 import time
 from collections import deque
+import wandb
 
 # Import from snake.py
 from snake import SnakeGame, DEFAULT_WIDTH, DEFAULT_HEIGHT, DEFAULT_HIDDEN_DIM, DEFAULT_NUM_LAYERS, DEFAULT_NUM_HEADS, DEFAULT_DROPOUT, DEFAULT_LR, DEFAULT_REPLAY_SIZE, DEFAULT_BATCH_SIZE, DEFAULT_GAMMA, DEFAULT_EPS_START, DEFAULT_EPS_END, DEFAULT_TARGET_UPDATE, DEFAULT_NUM_EPISODES, DEFAULT_LOG_INTERVAL, DEFAULT_MAX_STEPS, DEFAULT_SEED, DEFAULT_RENDER_DELAY, set_seed
@@ -411,6 +417,47 @@ class LoopLoggerCallback(BaseCallback):
         return True
 
 
+class WandbCallback(BaseCallback):
+    """Custom callback that logs metrics to Weights & Biases.
+    
+    Logs training metrics, episode statistics, and loop detection data.
+    Works in conjunction with TensorBoard logging.
+    """
+
+    def __init__(self, verbose: int = 0):
+        super().__init__(verbose)
+        self.episode_count = 0
+
+    def _on_step(self) -> bool:
+        # Log from the logger's current name_to_value dict
+        if self.logger is not None:
+            # Get all logged values from SB3's logger
+            for key in self.logger.name_to_value:
+                value = self.logger.name_to_value[key]
+                # Log to wandb with the same key structure
+                wandb.log({key: value}, step=self.num_timesteps)
+        
+        # Also log any info dict values
+        infos = self.locals.get("infos", [])
+        for info in infos:
+            if "episode" in info:
+                self.episode_count += 1
+                # Log episode-level metrics
+                ep_info = info["episode"]
+                wandb.log({
+                    "episode/reward": ep_info.get("r", 0.0),
+                    "episode/length": ep_info.get("l", 0),
+                    "episode/time": ep_info.get("t", 0.0),
+                    "episode/count": self.episode_count,
+                }, step=self.num_timesteps)
+                
+                # Log score if available
+                if "score" in info:
+                    wandb.log({"episode/score": info["score"]}, step=self.num_timesteps)
+        
+        return True
+
+
 class CustomEvalCallback(EvalCallback):
     """EvalCallback that also logs loop metrics during evaluation under the 'eval/' namespace.
 
@@ -656,8 +703,54 @@ def train_sb3(
     loop_min_period: int = 4,
     loop_max_period: int = 20,
     tensorboard_log: str = "./tb_snake",
+    use_wandb: bool = False,
+    wandb_project: str = "snake-rl",
+    wandb_run_name: Optional[str] = None,
+    wandb_tags: Optional[list] = None,
 ):
     set_seed(seed)
+    
+    # Initialize Weights & Biases if requested
+    if use_wandb:
+        wandb_config = {
+            "width": width,
+            "height": height,
+            "num_episodes": num_episodes,
+            "batch_size": batch_size,
+            "gamma": gamma,
+            "eps_start": eps_start,
+            "eps_end": eps_end,
+            "exploration_fraction": exploration_fraction,
+            "learning_starts": learning_starts,
+            "target_update": target_update,
+            "d_model": d_model,
+            "num_layers": num_layers,
+            "num_heads": num_heads,
+            "dropout": dropout,
+            "lr": lr,
+            "lr_schedule": lr_schedule,
+            "lr_end": lr_end,
+            "replay_size": replay_size,
+            "max_steps": max_steps,
+            "seed": seed,
+            "step_penalty": step_penalty,
+            "shaping_coef": shaping_coef,
+            "apple_reward": apple_reward,
+            "death_penalty": death_penalty,
+            "max_score": max_score,
+            "loop_penalty_coef": loop_penalty_coef,
+            "loop_end_bonus": loop_end_bonus,
+            "loop_min_period": loop_min_period,
+            "loop_max_period": loop_max_period,
+        }
+        wandb.init(
+            project=wandb_project,
+            name=wandb_run_name,
+            config=wandb_config,
+            tags=wandb_tags,
+            sync_tensorboard=True,  # Also sync tensorboard logs
+        )
+    
     # Wrap as Monitor(TimeLimit(...)) so time-limit truncations are recorded consistently
     snake_env = SnakeEnv(
         width=width,
@@ -768,10 +861,21 @@ def train_sb3(
     try:
         score_cb = ScoreLoggerCallback(mean_window=100)
         loop_cb = LoopLoggerCallback()
-        model.learn(total_timesteps=total_timesteps, callback=CallbackList([pbar_cb, eval_cb, score_cb, loop_cb]))
+        callbacks = [pbar_cb, eval_cb, score_cb, loop_cb]
+        
+        # Add WandbCallback if using wandb
+        if use_wandb:
+            wandb_cb = WandbCallback()
+            callbacks.append(wandb_cb)
+        
+        model.learn(total_timesteps=total_timesteps, callback=CallbackList(callbacks))
     finally:
         # Ensure the terminal cursor is visible again
         print("\033[?25h", end="", flush=True)
+        
+        # Finish wandb run if initialized
+        if use_wandb:
+            wandb.finish()
 
     # Ensure zip extension for SB3 models
     if not model_path.endswith(".zip"):
@@ -903,6 +1007,12 @@ def build_arg_parser():
     pt.add_argument("--loop-end-bonus", type=float, default=0.0, help="One-time bonus awarded when exiting a detected loop; multiplied by last repeat count")
     pt.add_argument("--loop-min-period", type=int, default=4, help="Minimum action cycle length to consider a loop")
     pt.add_argument("--loop-max-period", type=int, default=20, help="Maximum action cycle length to consider a loop")
+    
+    # Weights & Biases logging
+    pt.add_argument("--wandb", action="store_true", help="Enable Weights & Biases logging")
+    pt.add_argument("--wandb-project", type=str, default="snake-rl", help="W&B project name")
+    pt.add_argument("--wandb-run-name", type=str, default=None, help="W&B run name (auto-generated if not specified)")
+    pt.add_argument("--wandb-tags", nargs="*", default=None, help="W&B tags for the run")
 
     # Play args
     pp = sub.add_parser("play", help="Play using a trained SB3 model")
@@ -1044,6 +1154,10 @@ def main():
         loop_end_bonus=getattr(args, "loop_end_bonus", 0.0),
         loop_min_period=getattr(args, "loop_min_period", 4),
         loop_max_period=getattr(args, "loop_max_period", 20),
+        use_wandb=getattr(args, "wandb", False),
+        wandb_project=getattr(args, "wandb_project", "snake-rl"),
+        wandb_run_name=getattr(args, "wandb_run_name", None),
+        wandb_tags=getattr(args, "wandb_tags", None),
     )
 
 class ScoreLimit(gym.Wrapper):
