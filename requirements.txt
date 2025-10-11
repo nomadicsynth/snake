@@ -1,8 +1,11 @@
-numpy
-torch
-matplotlib
-pytest
-tqdm
 gymnasium
+matplotlib
+ninja
+numpy
+packaging
+pytest
 stable-baselines3[extra]
+torch
+tqdm
 wandb
+wheel
