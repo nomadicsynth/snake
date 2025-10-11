@@ -20,8 +20,8 @@ def quick_benchmark(use_compile=False, sdpa_backend=None, use_amp=False, fast_mo
         use_amp: Whether to use automatic mixed precision (bf16) for FlashAttention support
         fast_mode: If True, use reduced steps for faster benchmarking (~3x faster)
     """
-    # Focus on larger batch sizes for 4090
-    batch_sizes = [128, 256, 512, 1024, 2048, 4096]
+    # Focus on larger batch sizes for 4090, now up to 16K
+    batch_sizes = [128, 256, 512, 1024, 2048, 4096, 8192, 16384]
     
     # Configure benchmark parameters based on mode
     if fast_mode:
@@ -67,110 +67,145 @@ def quick_benchmark(use_compile=False, sdpa_backend=None, use_amp=False, fast_mo
         print(f"Testing batch_size = {batch_size}")
         print('='*60)
         
-        env = SnakeEnv(width=20, height=20, num_apples=1)
-        env = TimeLimit(env, max_episode_steps=500)
-        env = Monitor(env)
-        
-        policy_kwargs = {
-            "features_extractor_class": TransformerExtractor,
-            "features_extractor_kwargs": {
-                "d_model": 64,
-                "n_layers": 2,
-                "n_heads": 4,
-                "dropout": 0.1,
-                "features_dim": 128,
-            },
-        }
-        
-        model = DQN(
-            "CnnPolicy",
-            env,
-            policy_kwargs=policy_kwargs,
-            batch_size=batch_size,
-            buffer_size=buffer_size,
-            learning_starts=learning_starts,
-            train_freq=4,
-            gradient_steps=1,
-            verbose=0,
-            device="cuda",
-        )
-        
-        # Note: We use autocast context manager instead of converting model dtype
-        # This handles mixed precision automatically without dtype mismatch errors
-        
-        # Apply torch.compile if requested
-        if use_compile:
-            print("Compiling model with torch.compile()...")
-            # Compile the policy network
-            model.policy.features_extractor = torch.compile(
-                model.policy.features_extractor,
-                mode="reduce-overhead",  # Options: "default", "reduce-overhead", "max-autotune"
+        try:
+            env = SnakeEnv(width=20, height=20, num_apples=1)
+            env = TimeLimit(env, max_episode_steps=500)
+            env = Monitor(env)
+            
+            policy_kwargs = {
+                "features_extractor_class": TransformerExtractor,
+                "features_extractor_kwargs": {
+                    "d_model": 64,
+                    "n_layers": 2,
+                    "n_heads": 4,
+                    "dropout": 0.1,
+                    "features_dim": 128,
+                },
+            }
+            
+            model = DQN(
+                "CnnPolicy",
+                env,
+                policy_kwargs=policy_kwargs,
+                batch_size=batch_size,
+                buffer_size=buffer_size,
+                learning_starts=learning_starts,
+                train_freq=4,
+                gradient_steps=1,
+                verbose=0,
+                device="cuda",
             )
-            model.q_net = torch.compile(model.q_net, mode="reduce-overhead")
-            if hasattr(model, 'q_net_target'):
-                model.q_net_target = torch.compile(model.q_net_target, mode="reduce-overhead")
-        
-        # Warmup
-        print("Running warmup...")
-        with get_sdpa_context():
-            if use_amp:
-                with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+            
+            # Note: We use autocast context manager instead of converting model dtype
+            # This handles mixed precision automatically without dtype mismatch errors
+            
+            # Apply torch.compile if requested
+            if use_compile:
+                print("Compiling model with torch.compile()...")
+                # Compile the policy network
+                model.policy.features_extractor = torch.compile(
+                    model.policy.features_extractor,
+                    mode="reduce-overhead",  # Options: "default", "reduce-overhead", "max-autotune"
+                )
+                model.q_net = torch.compile(model.q_net, mode="reduce-overhead")
+                if hasattr(model, 'q_net_target'):
+                    model.q_net_target = torch.compile(model.q_net_target, mode="reduce-overhead")
+            
+            # Warmup
+            print("Running warmup...")
+            with get_sdpa_context():
+                if use_amp:
+                    with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+                        model.learn(total_timesteps=warmup_steps, progress_bar=True)
+                else:
                     model.learn(total_timesteps=warmup_steps, progress_bar=True)
-            else:
-                model.learn(total_timesteps=warmup_steps, progress_bar=True)
-        
-        # Track gradient updates
-        initial_num_timesteps = model.num_timesteps
-        initial_train_calls = model._n_updates
-        
-        # Actual benchmark
-        print("Running benchmark...")
-        torch.cuda.synchronize()
-        start = time.time()
-        with get_sdpa_context():
-            if use_amp:
-                with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+            
+            # Track gradient updates
+            initial_num_timesteps = model.num_timesteps
+            initial_train_calls = model._n_updates
+            
+            # Actual benchmark
+            print("Running benchmark...")
+            torch.cuda.synchronize()
+            start = time.time()
+            with get_sdpa_context():
+                if use_amp:
+                    with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+                        model.learn(total_timesteps=timesteps, progress_bar=True)
+                else:
                     model.learn(total_timesteps=timesteps, progress_bar=True)
+            torch.cuda.synchronize()
+            elapsed = time.time() - start
+            
+            # Calculate actual metrics
+            actual_timesteps = model.num_timesteps - initial_num_timesteps
+            num_updates = model._n_updates - initial_train_calls
+            samples_processed = num_updates * batch_size  # Total samples used for gradient updates
+            
+            # Get memory stats
+            max_memory = torch.cuda.max_memory_allocated() / 1024**3  # GB
+            
+            env_steps_per_sec = actual_timesteps / elapsed
+            samples_per_sec = samples_processed / elapsed
+            updates_per_sec = num_updates / elapsed
+            
+            results[batch_size] = {
+                'time': elapsed,
+                'env_steps_per_sec': env_steps_per_sec,
+                'samples_per_sec': samples_per_sec,
+                'updates_per_sec': updates_per_sec,
+                'num_updates': num_updates,
+                'samples_processed': samples_processed,
+                'max_memory_gb': max_memory,
+                'compiled': use_compile,
+                'sdpa_backend': sdpa_backend or 'auto',
+                'use_amp': use_amp,
+                'oom_error': False,
+            }
+            
+            print(f"Time: {elapsed:.2f}s")
+            print(f"Env steps/sec: {env_steps_per_sec:.1f}")
+            print(f"Gradient updates: {num_updates}")
+            print(f"Samples/sec: {samples_per_sec:.1f}")
+            print(f"Updates/sec: {updates_per_sec:.1f}")
+            print(f"Max GPU memory: {max_memory:.2f} GB")
+            
+            del model
+            torch.cuda.empty_cache()
+            torch.cuda.reset_peak_memory_stats()
+            
+        except (RuntimeError, torch.cuda.OutOfMemoryError) as e:
+            if "out of memory" in str(e).lower() or "cuda" in str(e).lower():
+                print(f"❌ OOM ERROR: Batch size {batch_size} exceeds GPU memory!")
+                print(f"   Error details: {str(e)[:200]}")
+                
+                # Record terrible metrics so this won't be picked
+                results[batch_size] = {
+                    'time': 999999.0,
+                    'env_steps_per_sec': 0.0,
+                    'samples_per_sec': 0.0,
+                    'updates_per_sec': 0.0,
+                    'num_updates': 0,
+                    'samples_processed': 0,
+                    'max_memory_gb': 999.0,
+                    'compiled': use_compile,
+                    'sdpa_backend': sdpa_backend or 'auto',
+                    'use_amp': use_amp,
+                    'oom_error': True,
+                }
+                
+                # Clean up
+                try:
+                    del model
+                except:
+                    pass
+                torch.cuda.empty_cache()
+                torch.cuda.reset_peak_memory_stats()
+                
+                print("   Continuing with next batch size...\n")
             else:
-                model.learn(total_timesteps=timesteps, progress_bar=True)
-        torch.cuda.synchronize()
-        elapsed = time.time() - start
-        
-        # Calculate actual metrics
-        actual_timesteps = model.num_timesteps - initial_num_timesteps
-        num_updates = model._n_updates - initial_train_calls
-        samples_processed = num_updates * batch_size  # Total samples used for gradient updates
-        
-        # Get memory stats
-        max_memory = torch.cuda.max_memory_allocated() / 1024**3  # GB
-        
-        env_steps_per_sec = actual_timesteps / elapsed
-        samples_per_sec = samples_processed / elapsed
-        updates_per_sec = num_updates / elapsed
-        
-        results[batch_size] = {
-            'time': elapsed,
-            'env_steps_per_sec': env_steps_per_sec,
-            'samples_per_sec': samples_per_sec,
-            'updates_per_sec': updates_per_sec,
-            'num_updates': num_updates,
-            'samples_processed': samples_processed,
-            'max_memory_gb': max_memory,
-            'compiled': use_compile,
-            'sdpa_backend': sdpa_backend or 'auto',
-            'use_amp': use_amp,
-        }
-        
-        print(f"Time: {elapsed:.2f}s")
-        print(f"Env steps/sec: {env_steps_per_sec:.1f}")
-        print(f"Gradient updates: {num_updates}")
-        print(f"Samples/sec: {samples_per_sec:.1f}")
-        print(f"Updates/sec: {updates_per_sec:.1f}")
-        print(f"Max GPU memory: {max_memory:.2f} GB")
-        
-        del model
-        torch.cuda.empty_cache()
-        torch.cuda.reset_peak_memory_stats()
+                # Re-raise if it's not an OOM error
+                raise
     
     # Close overall progress bar
     overall_pbar.close()
@@ -179,16 +214,27 @@ def quick_benchmark(use_compile=False, sdpa_backend=None, use_amp=False, fast_mo
     print("\n" + "="*80)
     print("BENCHMARK RESULTS (sorted by training throughput)")
     print("="*80)
-    print(f"{'Batch':<8} {'Samples/s':<12} {'Updates/s':<12} {'Env Steps/s':<12} {'GPU Mem (GB)':<15}")
+    print(f"{'Batch':<8} {'Samples/s':<12} {'Updates/s':<12} {'Env Steps/s':<12} {'GPU Mem (GB)':<15} {'Status':<10}")
     print("-"*80)
     
     for bs, metrics in sorted(results.items(), key=lambda x: x[1]['samples_per_sec'], reverse=True):
-        print(f"{bs:<8} {metrics['samples_per_sec']:<12.1f} {metrics['updates_per_sec']:<12.1f} {metrics['env_steps_per_sec']:<12.1f} {metrics['max_memory_gb']:<15.2f}")
+        status = "OOM ❌" if metrics.get('oom_error', False) else "OK ✓"
+        if metrics.get('oom_error', False):
+            print(f"{bs:<8} {'---':<12} {'---':<12} {'---':<12} {'---':<15} {status:<10}")
+        else:
+            print(f"{bs:<8} {metrics['samples_per_sec']:<12.1f} {metrics['updates_per_sec']:<12.1f} {metrics['env_steps_per_sec']:<12.1f} {metrics['max_memory_gb']:<15.2f} {status:<10}")
     
-    best_bs = max(results.items(), key=lambda x: x[1]['samples_per_sec'])[0]
-    print("\n" + "="*80)
-    print(f"🏆 OPTIMAL BATCH SIZE (max samples/sec): {best_bs}")
-    print("="*80)
+    # Find best batch size excluding OOM errors
+    valid_results = {bs: metrics for bs, metrics in results.items() if not metrics.get('oom_error', False)}
+    if valid_results:
+        best_bs = max(valid_results.items(), key=lambda x: x[1]['samples_per_sec'])[0]
+        print("\n" + "="*80)
+        print(f"🏆 OPTIMAL BATCH SIZE (max samples/sec): {best_bs}")
+        print("="*80)
+    else:
+        print("\n" + "="*80)
+        print("⚠️  All batch sizes resulted in OOM errors!")
+        print("="*80)
     
     return results
 
@@ -223,8 +269,10 @@ def save_best_config_to_env(all_results):
     best_full_result = None
     
     for config_name, results in all_results.items():
-        # Find the best batch size for this config
+        # Find the best batch size for this config (excluding OOM errors)
         for batch_size, metrics in results.items():
+            if metrics.get('oom_error', False):
+                continue  # Skip OOM results
             if metrics['samples_per_sec'] > best_samples_per_sec:
                 best_samples_per_sec = metrics['samples_per_sec']
                 best_config = config_name
@@ -367,23 +415,50 @@ if __name__ == "__main__":
                 compile = results_compile[bs]['samples_per_sec']
                 both = results_compile_flash[bs]['samples_per_sec']
                 
-                best = max(baseline, flash, compile, both)
-                speedup = (best / baseline - 1) * 100
+                # Check for OOM errors
+                baseline_oom = results_baseline[bs].get('oom_error', False)
+                flash_oom = results_flash[bs].get('oom_error', False)
+                compile_oom = results_compile[bs].get('oom_error', False)
+                both_oom = results_compile_flash[bs].get('oom_error', False)
                 
-                print(f"{bs:<8} {baseline:<12.1f} {flash:<12.1f} {compile:<12.1f} {both:<12.1f} {speedup:+.1f}%")
+                # Format values
+                baseline_str = "OOM" if baseline_oom else f"{baseline:.1f}"
+                flash_str = "OOM" if flash_oom else f"{flash:.1f}"
+                compile_str = "OOM" if compile_oom else f"{compile:.1f}"
+                both_str = "OOM" if both_oom else f"{both:.1f}"
+                
+                # Calculate speedup only if baseline is valid
+                if not baseline_oom:
+                    best = max(
+                        baseline if not baseline_oom else 0,
+                        flash if not flash_oom else 0,
+                        compile if not compile_oom else 0,
+                        both if not both_oom else 0
+                    )
+                    speedup = (best / baseline - 1) * 100 if best > 0 else 0
+                    speedup_str = f"{speedup:+.1f}%"
+                else:
+                    speedup_str = "---"
+                
+                print(f"{bs:<8} {baseline_str:<12} {flash_str:<12} {compile_str:<12} {both_str:<12} {speedup_str:<15}")
             
-            # Overall comparison
-            avg_baseline = sum(r['samples_per_sec'] for r in results_baseline.values()) / len(results_baseline)
-            avg_flash = sum(r['samples_per_sec'] for r in results_flash.values()) / len(results_flash)
-            avg_compile = sum(r['samples_per_sec'] for r in results_compile.values()) / len(results_compile)
-            avg_both = sum(r['samples_per_sec'] for r in results_compile_flash.values()) / len(results_compile_flash)
+            # Overall comparison (excluding OOM results)
+            def avg_valid(results):
+                valid = [r['samples_per_sec'] for r in results.values() if not r.get('oom_error', False)]
+                return sum(valid) / len(valid) if valid else 0
+            
+            avg_baseline = avg_valid(results_baseline)
+            avg_flash = avg_valid(results_flash)
+            avg_compile = avg_valid(results_compile)
+            avg_both = avg_valid(results_compile_flash)
             
             print("\n" + "=" * 80)
-            print("AVERAGE PERFORMANCE (samples/sec = training throughput):")
+            print("AVERAGE PERFORMANCE (samples/sec = training throughput, OOM excluded):")
             print(f"  Baseline (fp32):             {avg_baseline:.1f} samples/sec")
-            print(f"  BF16 + FlashAttention:       {avg_flash:.1f} samples/sec ({(avg_flash/avg_baseline-1)*100:+.1f}%)")
-            print(f"  BF16 + torch.compile():      {avg_compile:.1f} samples/sec ({(avg_compile/avg_baseline-1)*100:+.1f}%)")
-            print(f"  BF16 + Both combined:        {avg_both:.1f} samples/sec ({(avg_both/avg_baseline-1)*100:+.1f}%)")
+            if avg_baseline > 0:
+                print(f"  BF16 + FlashAttention:       {avg_flash:.1f} samples/sec ({(avg_flash/avg_baseline-1)*100:+.1f}%)")
+                print(f"  BF16 + torch.compile():      {avg_compile:.1f} samples/sec ({(avg_compile/avg_baseline-1)*100:+.1f}%)")
+                print(f"  BF16 + Both combined:        {avg_both:.1f} samples/sec ({(avg_both/avg_baseline-1)*100:+.1f}%)")
             print("=" * 80)
             
             # Save results
@@ -414,21 +489,40 @@ if __name__ == "__main__":
             print("-" * 80)
             
             for bs in results_no_compile.keys():
+                normal_oom = results_no_compile[bs].get('oom_error', False)
+                compiled_oom = results_compile[bs].get('oom_error', False)
+                
                 normal_sps = results_no_compile[bs]['samples_per_sec']
                 compiled_sps = results_compile[bs]['samples_per_sec']
-                speedup = (compiled_sps / normal_sps - 1) * 100
-                speedup_str = f"{speedup:+.1f}%"
                 
-                print(f"{bs:<12} {normal_sps:<18.1f} {compiled_sps:<18.1f} {speedup_str:<12}")
+                normal_str = "OOM" if normal_oom else f"{normal_sps:.1f}"
+                compiled_str = "OOM" if compiled_oom else f"{compiled_sps:.1f}"
+                
+                if not normal_oom and not compiled_oom:
+                    speedup = (compiled_sps / normal_sps - 1) * 100
+                    speedup_str = f"{speedup:+.1f}%"
+                else:
+                    speedup_str = "---"
+                
+                print(f"{bs:<12} {normal_str:<18} {compiled_str:<18} {speedup_str:<12}")
             
-            # Overall speedup
-            avg_normal = sum(r['samples_per_sec'] for r in results_no_compile.values()) / len(results_no_compile)
-            avg_compiled = sum(r['samples_per_sec'] for r in results_compile.values()) / len(results_compile)
-            overall_speedup = (avg_compiled / avg_normal - 1) * 100
+            # Overall speedup (excluding OOM)
+            def avg_valid(results):
+                valid = [r['samples_per_sec'] for r in results.values() if not r.get('oom_error', False)]
+                return sum(valid) / len(valid) if valid else 0
             
-            print("\n" + "=" * 80)
-            print(f"Average speedup with torch.compile(): {overall_speedup:+.1f}%")
-            print("=" * 80)
+            avg_normal = avg_valid(results_no_compile)
+            avg_compiled = avg_valid(results_compile)
+            
+            if avg_normal > 0 and avg_compiled > 0:
+                overall_speedup = (avg_compiled / avg_normal - 1) * 100
+                print("\n" + "=" * 80)
+                print(f"Average speedup with torch.compile(): {overall_speedup:+.1f}%")
+                print("=" * 80)
+            else:
+                print("\n" + "=" * 80)
+                print("⚠️  Unable to calculate speedup (all results OOM)")
+                print("=" * 80)
             
             # Save results
             save_results_to_file(all_results, fast_mode=args.fast)
