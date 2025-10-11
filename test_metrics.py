@@ -93,6 +93,8 @@ def check_metrics(log_dir):
 
     # Required eval metrics
     required_scalars = [
+        "eval/mean_ep_length",
+        "eval/mean_reward",
         "eval/loop_is_loop",
         "eval/loop_repeats",
         "eval/loop_period",
