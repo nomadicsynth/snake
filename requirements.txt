@@ -4,6 +4,7 @@ ninja
 numpy
 packaging
 pytest
+python-dotenv
 stable-baselines3[extra]
 torch
 tqdm

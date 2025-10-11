@@ -9,6 +9,11 @@ import gymnasium as gym
 from gymnasium import spaces
 from typing import Optional
 import warnings
+from dotenv import load_dotenv
+from contextlib import nullcontext
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Suppress pydantic warnings from stable-baselines3
 warnings.filterwarnings("ignore", category=UserWarning, module="pydantic._internal._generate_schema")
@@ -28,6 +33,34 @@ import wandb
 from snake import SnakeGame, DEFAULT_WIDTH, DEFAULT_HEIGHT, DEFAULT_HIDDEN_DIM, DEFAULT_NUM_LAYERS, DEFAULT_NUM_HEADS, DEFAULT_DROPOUT, DEFAULT_LR, DEFAULT_REPLAY_SIZE, DEFAULT_BATCH_SIZE, DEFAULT_GAMMA, DEFAULT_EPS_START, DEFAULT_EPS_END, DEFAULT_TARGET_UPDATE, DEFAULT_NUM_EPISODES, DEFAULT_LOG_INTERVAL, DEFAULT_MAX_STEPS, DEFAULT_SEED, DEFAULT_RENDER_DELAY, set_seed
 from positional_encoding import PositionalEncoding2D
 from stable_baselines3.common.env_checker import check_env
+
+
+# Helper functions to read environment variables with fallback defaults
+def get_env_int(key: str, default: int) -> int:
+    """Get integer environment variable with fallback to default."""
+    val = os.getenv(key)
+    return int(val) if val is not None else default
+
+
+def get_env_float(key: str, default: float) -> float:
+    """Get float environment variable with fallback to default."""
+    val = os.getenv(key)
+    return float(val) if val is not None else default
+
+
+def get_env_bool(key: str, default: bool) -> bool:
+    """Get boolean environment variable with fallback to default."""
+    val = os.getenv(key)
+    if val is None:
+        return default
+    return val.lower() in ('true', '1', 'yes', 'on')
+
+
+# Read optimization settings from .env
+ENV_BATCH_SIZE = get_env_int('OPTIMAL_BATCH_SIZE', DEFAULT_BATCH_SIZE)
+ENV_USE_TORCH_COMPILE = get_env_bool('USE_TORCH_COMPILE', False)
+ENV_USE_FLASH_ATTENTION = get_env_bool('USE_FLASH_ATTENTION', False)
+ENV_USE_BF16 = get_env_bool('USE_BF16', False)
 
 
 def cosine_schedule(start: float, end: float):
@@ -708,8 +741,17 @@ def train_sb3(
     wandb_project: str = "snake-rl",
     wandb_run_name: Optional[str] = None,
     wandb_tags: Optional[list] = None,
+    # Performance optimization overrides
+    no_compile: bool = False,
+    no_flash_attention: bool = False,
+    no_bf16: bool = False,
 ):
     set_seed(seed)
+    
+    # Determine which optimizations to use (env vars can be overridden by CLI flags)
+    use_compile = ENV_USE_TORCH_COMPILE and not no_compile
+    use_flash = ENV_USE_FLASH_ATTENTION and not no_flash_attention
+    use_bf16 = ENV_USE_BF16 and not no_bf16
     
     # Initialize Weights & Biases if requested
     if use_wandb:
@@ -743,6 +785,10 @@ def train_sb3(
             "loop_end_bonus": loop_end_bonus,
             "loop_min_period": loop_min_period,
             "loop_max_period": loop_max_period,
+            # Performance optimizations
+            "use_torch_compile": use_compile,
+            "use_flash_attention": use_flash,
+            "use_bf16": use_bf16,
         }
         wandb.init(
             project=wandb_project,
@@ -845,6 +891,36 @@ def train_sb3(
         seed=seed,
     )
 
+    # Apply optimizations from .env configuration (or CLI overrides)
+    if use_compile and hasattr(torch, 'compile'):
+        print("🔧 Applying torch.compile() optimization...")
+        model.policy.features_extractor = torch.compile(
+            model.policy.features_extractor,
+            mode="reduce-overhead",
+        )
+        model.q_net = torch.compile(model.q_net, mode="reduce-overhead")
+        if hasattr(model, 'q_net_target'):
+            model.q_net_target = torch.compile(model.q_net_target, mode="reduce-overhead")
+        print("   ✓ Model compiled successfully")
+
+    # Helper function to create SDPA context for FlashAttention
+    def get_sdpa_context():
+        if use_flash and hasattr(torch.nn.attention, 'sdpa_kernel'):
+            from torch.nn.attention import SDPBackend, sdpa_kernel
+            print("🔧 Using FlashAttention backend for SDPA")
+            return sdpa_kernel(backends=[SDPBackend.FLASH_ATTENTION])
+        return nullcontext()
+
+    # Print optimization summary
+    print("\n" + "="*60)
+    print("Training Configuration Summary:")
+    print("="*60)
+    print(f"Batch size: {batch_size}")
+    print(f"torch.compile: {'✓ Enabled' if use_compile else '✗ Disabled'}")
+    print(f"FlashAttention: {'✓ Enabled' if use_flash else '✗ Disabled'}")
+    print(f"BF16 (mixed precision): {'✓ Enabled' if use_bf16 else '✗ Disabled'}")
+    print("="*60 + "\n")
+
     # Use SB3's built-in EvalCallback for periodic evaluation and best-model saving
     eval_cb = CustomEvalCallback(
         eval_env,
@@ -869,7 +945,15 @@ def train_sb3(
             wandb_cb = WandbCallback()
             callbacks.append(wandb_cb)
         
-        model.learn(total_timesteps=total_timesteps, callback=CallbackList(callbacks))
+        # Apply mixed precision and SDPA optimizations during training
+        with get_sdpa_context():
+            if use_bf16 and torch.cuda.is_available():
+                print("🚀 Starting training with BF16 mixed precision...")
+                with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+                    model.learn(total_timesteps=total_timesteps, callback=CallbackList(callbacks))
+            else:
+                print("🚀 Starting training with FP32 precision...")
+                model.learn(total_timesteps=total_timesteps, callback=CallbackList(callbacks))
     finally:
         # Ensure the terminal cursor is visible again
         print("\033[?25h", end="", flush=True)
@@ -965,7 +1049,7 @@ def build_arg_parser():
     pt.add_argument("--width", type=int, default=DEFAULT_WIDTH)
     pt.add_argument("--height", type=int, default=DEFAULT_HEIGHT)
     pt.add_argument("--episodes", type=int, default=DEFAULT_NUM_EPISODES)
-    pt.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
+    pt.add_argument("--batch-size", type=int, default=ENV_BATCH_SIZE)
     pt.add_argument("--gamma", type=float, default=DEFAULT_GAMMA, help="Discount factor")
     pt.add_argument("--eps-start", type=float, default=DEFAULT_EPS_START, help="initial value of random action probability")
     pt.add_argument("--eps-end", type=float, default=DEFAULT_EPS_END, help="final value of random action probability")
@@ -1015,6 +1099,11 @@ def build_arg_parser():
     pt.add_argument("--wandb-project", type=str, default="snake-rl", help="W&B project name")
     pt.add_argument("--wandb-run-name", type=str, default=None, help="W&B run name (auto-generated if not specified)")
     pt.add_argument("--wandb-tags", nargs="*", default=None, help="W&B tags for the run")
+
+    # Performance optimization flags (override .env settings)
+    pt.add_argument("--no-compile", action="store_true", help="Disable torch.compile() even if enabled in .env")
+    pt.add_argument("--no-flash-attention", action="store_true", help="Disable FlashAttention even if enabled in .env")
+    pt.add_argument("--no-bf16", action="store_true", help="Disable BF16 mixed precision even if enabled in .env")
 
     # Play args
     pp = sub.add_parser("play", help="Play using a trained SB3 model")
@@ -1160,6 +1249,9 @@ def main():
         wandb_project=getattr(args, "wandb_project", "snake-rl"),
         wandb_run_name=getattr(args, "wandb_run_name", None),
         wandb_tags=getattr(args, "wandb_tags", None),
+        no_compile=getattr(args, "no_compile", False),
+        no_flash_attention=getattr(args, "no_flash_attention", False),
+        no_bf16=getattr(args, "no_bf16", False),
     )
 
 class ScoreLimit(gym.Wrapper):
