@@ -456,20 +456,42 @@ class WandbCallback(BaseCallback):
     
     Logs training metrics, episode statistics, and loop detection data.
     Works in conjunction with TensorBoard logging.
+    
+    Note: When sync_tensorboard=True, we don't pass explicit step values
+    to avoid conflicts. Instead, we let TensorBoard syncing handle steps.
     """
 
     def __init__(self, verbose: int = 0):
         super().__init__(verbose)
         self.episode_count = 0
+        self.metrics_defined = False
+
+    def _on_training_start(self) -> None:
+        """Define custom metrics at the start of training."""
+        if not self.metrics_defined and wandb.run is not None:
+            # Define custom step metric for our additional metrics
+            # This allows W&B to properly track steps even with tensorboard syncing
+            wandb.define_metric("episode/*", step_metric="global_step")
+            wandb.define_metric("custom/*", step_metric="global_step")
+            self.metrics_defined = True
 
     def _on_step(self) -> bool:
+        # When using sync_tensorboard=True, don't pass step parameter to wandb.log
+        # The tensorboard integration will handle step tracking automatically
+        
         # Log from the logger's current name_to_value dict
         if self.logger is not None:
+            log_dict = {}
             # Get all logged values from SB3's logger
             for key in self.logger.name_to_value:
                 value = self.logger.name_to_value[key]
-                # Log to wandb with the same key structure
-                wandb.log({key: value}, step=self.num_timesteps)
+                log_dict[key] = value
+            
+            # Add global step for custom metrics
+            if log_dict:
+                log_dict["global_step"] = self.num_timesteps
+                # Log without explicit step parameter
+                wandb.log(log_dict)
         
         # Also log any info dict values
         infos = self.locals.get("infos", [])
@@ -478,16 +500,20 @@ class WandbCallback(BaseCallback):
                 self.episode_count += 1
                 # Log episode-level metrics
                 ep_info = info["episode"]
-                wandb.log({
+                log_dict = {
                     "episode/reward": ep_info.get("r", 0.0),
                     "episode/length": ep_info.get("l", 0),
                     "episode/time": ep_info.get("t", 0.0),
                     "episode/count": self.episode_count,
-                }, step=self.num_timesteps)
+                    "global_step": self.num_timesteps,
+                }
                 
                 # Log score if available
                 if "score" in info:
-                    wandb.log({"episode/score": info["score"]}, step=self.num_timesteps)
+                    log_dict["episode/score"] = info["score"]
+                
+                # Log without explicit step parameter
+                wandb.log(log_dict)
         
         return True
 
