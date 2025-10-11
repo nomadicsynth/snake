@@ -1,0 +1,10 @@
+__pycache__/
+tb_*/
+logs*/
+*logs/
+models/
+*.png
+*.pth
+*.zip
+*.pkl
+.venv/
