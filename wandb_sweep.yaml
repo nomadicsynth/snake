@@ -6,24 +6,24 @@ metric:
 parameters:
   lr:
     distribution: uniform
-    min: 0.00001
-    max: 0.06
+    min: 0.0001
+    max: 0.1
   lr_end:
     distribution: uniform
     min: 0.000001
-    max: 0.00001
-  replay_size:
-    distribution: int_uniform
-    min: 25000
-    max: 100000
+    max: 0.0001
   apple_reward:
+    distribution: int_uniform
+    min: 1
+    max: 40
+  death_penalty:
     distribution: int_uniform
     min: 1
     max: 40
   shaping_coef:
     distribution: uniform
     min: 0.05
-    max: 0.2
+    max: 0.7
   target_update:
     distribution: int_uniform
     min: 5
@@ -32,20 +32,12 @@ parameters:
     distribution: uniform
     min: 0.005
     max: 0.2
-  learning_starts:
-    distribution: int_uniform
-    min: 500
-    max: 2000
   loop_max_period:
     distribution: int_uniform
     min: 8
     max: 32
-  loop_min_period:
-    distribution: int_uniform
-    min: 2
-    max: 8
   loop_penalty_coef:
-    distribution: log_uniform
+    distribution: uniform
     min: 0.001
     max: 0.04
   exploration_fraction:
@@ -56,5 +48,14 @@ command:
   - ${env}
   - ${interpreter}
   - ${program}
-  - "--batch-size=4096"
-  - "--num_episodes=500"
+  - "--batch-size=1024"
+  - "--episodes=500"
+  - "--lr-schedule=cosine"
+  - "--width=10"
+  - "--height=10"
+  - "--max-score 10"
+  - "--max-steps 200"
+  - "--episodes 500"
+  - "--eval-episodes 20"
+  - "--wandb"
+  - "--model-path ./models/sb3_snake_trans_rl_sweep.zip"
