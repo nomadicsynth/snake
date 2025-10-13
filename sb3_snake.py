@@ -2,6 +2,7 @@ import os
 import math
 import argparse
 import sys
+import datetime
 import numpy as np
 import torch
 import torch.nn as nn
@@ -774,6 +775,8 @@ def train_sb3(
 ):
     set_seed(seed)
     
+    run_name = None
+    
     # Determine which optimizations to use (env vars can be overridden by CLI flags)
     use_compile = ENV_USE_TORCH_COMPILE and not no_compile
     use_flash = ENV_USE_FLASH_ATTENTION and not no_flash_attention
@@ -823,6 +826,7 @@ def train_sb3(
             tags=wandb_tags,
             sync_tensorboard=True,  # Also sync tensorboard logs
         )
+        run_name = wandb.run.name if wandb.run else None
     
     # Wrap as Monitor(TimeLimit(...)) so time-limit truncations are recorded consistently
     snake_env = SnakeEnv(
@@ -987,6 +991,12 @@ def train_sb3(
         # Finish wandb run if initialized
         if use_wandb:
             wandb.finish()
+
+    # Modify model path with wandb run name and timestamp if available
+    if run_name is not None:
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        base, ext = os.path.splitext(model_path)
+        model_path = f"{base}_{run_name}_{timestamp}{ext}"
 
     # Ensure zip extension for SB3 models
     if not model_path.endswith(".zip"):
