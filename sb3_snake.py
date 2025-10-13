@@ -988,20 +988,26 @@ def train_sb3(
         # Ensure the terminal cursor is visible again
         print("\033[?25h", end="", flush=True)
         
+        # Handle model path formatting and saving
+        if run_name is not None:
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            base, ext = os.path.splitext(model_path)
+            model_path = f"{base}_{run_name}_{timestamp}{ext}"
+            if not model_path.endswith(".zip"):
+                model_path = f"{model_path}.zip"
+            # Log to wandb if available
+            if use_wandb:
+                wandb.log({"final_model_path": model_path})
+        
+        # Save the model
+        model_dir = os.path.dirname(model_path)
+        if model_dir:
+            os.makedirs(model_dir, exist_ok=True)
+        model.save(model_path)
+        
         # Finish wandb run if initialized
         if use_wandb:
             wandb.finish()
-
-    # Modify model path with wandb run name and timestamp if available
-    if run_name is not None:
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        base, ext = os.path.splitext(model_path)
-        model_path = f"{base}_{run_name}_{timestamp}{ext}"
-
-    # Ensure zip extension for SB3 models
-    if not model_path.endswith(".zip"):
-        model_path = f"{model_path}.zip"
-    model.save(model_path)
 
     # Save some logs like original
     # SB3 logs to tensorboard, but we can save episode logs if needed
