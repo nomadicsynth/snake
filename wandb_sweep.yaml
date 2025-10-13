@@ -1,7 +1,7 @@
 program: sb3_snake.py
 method: bayes
 metric:
-  name: episode/score
+  name: eval/score
   goal: maximize
 parameters:
   lr:
