@@ -48,6 +48,7 @@ command:
   - ${env}
   - ${interpreter}
   - ${program}
+  - "train"
   - "--batch-size=1024"
   - "--episodes=500"
   - "--lr-schedule=cosine"
