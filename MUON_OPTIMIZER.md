@@ -27,6 +27,7 @@ Three new arguments have been added to both scripts:
 ### Usage Examples
 
 #### DQN with Muon
+
 ```bash
 python sb3_snake.py train \
     --use-muon \
@@ -37,6 +38,7 @@ python sb3_snake.py train \
 ```
 
 #### PPO with Muon
+
 ```bash
 python sb3_snake_ppo.py train \
     --use-muon \
@@ -49,12 +51,14 @@ python sb3_snake_ppo.py train \
 ### Configuration Details
 
 **Hidden Weight Parameters (Muon)**:
+
 - All 2D+ tensors in the model
 - Transformer attention weights, feed-forward layers
 - Learning rate: `--muon-lr` (default: 0.02)
 - Momentum: 0.95 (Muon default)
 
 **Auxiliary Parameters (Adam-like)**:
+
 - 1D tensors (biases, layer norms)
 - Embedding layers
 - Output projection heads
@@ -82,7 +86,7 @@ If Muon is not available, the scripts will automatically fall back to the standa
 
 When Muon is enabled, the training configuration summary will show:
 
-```
+```text
 ============================================================
 Training Configuration Summary:
 ============================================================
@@ -97,7 +101,8 @@ BF16 (mixed precision): ✓ Enabled
 ```
 
 The optimizer will also print the number of parameters in each group:
-```
+
+```text
 Muon optimizer: 42 hidden weight tensors (lr=0.02), 18 auxiliary params (lr=0.0001)
 ```
 
