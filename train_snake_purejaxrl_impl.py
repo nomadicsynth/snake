@@ -26,6 +26,104 @@ except ImportError:
     _MUON_AVAILABLE = False
 
 
+def make_evaluate_fn(env, env_params, num_episodes=128):
+    """
+    Create an evaluation function that runs the policy without exploration
+    
+    Args:
+        env: SnakeGymnaxWrapper instance
+        env_params: Environment parameters
+        num_episodes: Number of episodes to run for evaluation
+    
+    Returns:
+        evaluate_fn: JIT-compiled evaluation function
+    """
+    
+    def evaluate(network, params, rng):
+        """
+        Evaluate the policy greedily (no exploration)
+        
+        Returns:
+            Dict with evaluation metrics:
+                - mean_return: Average episode return
+                - mean_length: Average episode length
+                - mean_score: Average game score (apples eaten)
+                - max_return: Best episode return
+                - max_score: Best game score
+        """
+        
+        def run_episode(rng):
+            """Run a single episode greedily"""
+            # Reset environment
+            rng, reset_rng = jax.random.split(rng)
+            obs, state = env.reset(reset_rng, env_params)
+            
+            def step_fn(carry, unused):
+                obs, state, rng, done = carry
+                
+                # Get greedy action (argmax, no sampling)
+                rng, dropout_rng = jax.random.split(rng)
+                logits, value = network.apply(
+                    params, obs[None], 
+                    training=False,
+                    rngs={'dropout': dropout_rng}
+                )
+                action = jnp.argmax(logits[0])
+                
+                # Step environment
+                rng, step_rng = jax.random.split(rng)
+                next_obs, next_state, reward, next_done, info = env.step(
+                    step_rng, state, action, env_params
+                )
+                
+                # Only update if not already done
+                obs = jnp.where(done, obs, next_obs)
+                state = jax.tree_util.tree_map(
+                    lambda x, y: jnp.where(done, x, y), state, next_state
+                )
+                done = done | next_done
+                
+                return (obs, state, rng, done), (reward, next_done)
+            
+            # Run until episode ends (max_steps)
+            max_steps = env_params.max_steps if hasattr(env_params, 'max_steps') else 1000
+            (_, final_state, _, _), (rewards, dones) = jax.lax.scan(
+                step_fn,
+                (obs, state, rng, jnp.array(False)),
+                None,
+                length=max_steps
+            )
+            
+            # Calculate metrics
+            episode_return = jnp.sum(rewards)
+            episode_length = jnp.sum(dones)  # Count number of steps until done
+            # Get final score from state
+            final_score = final_state.snake_state.score
+            
+            return {
+                'return': episode_return,
+                'length': episode_length,
+                'score': final_score,
+            }
+        
+        # Run multiple episodes in parallel
+        rng_episodes = jax.random.split(rng, num_episodes)
+        episode_metrics = jax.vmap(run_episode)(rng_episodes)
+        
+        # Aggregate metrics
+        return {
+            'mean_return': jnp.mean(episode_metrics['return']),
+            'std_return': jnp.std(episode_metrics['return']),
+            'mean_length': jnp.mean(episode_metrics['length']),
+            'mean_score': jnp.mean(episode_metrics['score']),
+            'max_return': jnp.max(episode_metrics['return']),
+            'max_score': jnp.max(episode_metrics['score']),
+            'min_return': jnp.min(episode_metrics['return']),
+        }
+    
+    return jax.jit(evaluate, static_argnums=(0,))
+
+
 class Transition(NamedTuple):
     done: jnp.ndarray
     action: jnp.ndarray

@@ -45,46 +45,50 @@ def parse_args():
     # Environment args
     parser.add_argument("--width", type=int, default=10, help="Board width")
     parser.add_argument("--height", type=int, default=10, help="Board height")
-    parser.add_argument("--max-steps", type=int, default=500, help="Max steps per episode")
-    parser.add_argument("--apple-reward", type=float, default=10.0, help="Reward for eating apple")
-    parser.add_argument("--death-penalty", type=float, default=-10.0, help="Penalty for dying")
-    parser.add_argument("--step-penalty", type=float, default=-0.01, help="Penalty per step")
+    parser.add_argument("--max-steps", "--max_steps", type=int, default=500, help="Max steps per episode")
+    parser.add_argument("--apple-reward", "--apple_reward", type=float, default=10.0, help="Reward for eating apple")
+    parser.add_argument("--death-penalty", "--death_penalty", type=float, default=-10.0, help="Penalty for dying")
+    parser.add_argument("--step-penalty", "--step_penalty", type=float, default=-0.01, help="Penalty per step")
     
     # Training args
-    parser.add_argument("--num-envs", type=int, default=2048, help="Number of parallel environments")
-    parser.add_argument("--num-steps", type=int, default=128, help="Steps per rollout")
-    parser.add_argument("--total-timesteps", type=int, default=5_000_000, help="Total training timesteps")
-    parser.add_argument("--update-epochs", type=int, default=4, help="PPO update epochs")
-    parser.add_argument("--num-minibatches", type=int, default=32, help="Number of minibatches")
+    parser.add_argument("--num-envs", "--num_envs", type=int, default=2048, help="Number of parallel environments")
+    parser.add_argument("--num-steps", "--num_steps", type=int, default=128, help="Steps per rollout")
+    parser.add_argument("--total-timesteps", "--total_timesteps", type=int, default=5_000_000, help="Total training timesteps")
+    parser.add_argument("--update-epochs", "--update_epochs", type=int, default=4, help="PPO update epochs")
+    parser.add_argument("--num-minibatches", "--num_minibatches", type=int, default=32, help="Number of minibatches")
     parser.add_argument("--lr", type=float, default=2.5e-4, help="Learning rate")
     parser.add_argument("--gamma", type=float, default=0.99, help="Discount factor")
-    parser.add_argument("--gae-lambda", type=float, default=0.95, help="GAE lambda")
-    parser.add_argument("--clip-eps", type=float, default=0.2, help="PPO clip epsilon")
-    parser.add_argument("--ent-coef", type=float, default=0.01, help="Entropy coefficient")
-    parser.add_argument("--vf-coef", type=float, default=0.5, help="Value function coefficient")
-    parser.add_argument("--max-grad-norm", type=float, default=0.5, help="Max gradient norm")
-    parser.add_argument("--anneal-lr", action="store_true", default=True, help="Use learning rate annealing")
+    parser.add_argument("--gae-lambda", "--gae_lambda", type=float, default=0.95, help="GAE lambda")
+    parser.add_argument("--clip-eps", "--clip_eps", type=float, default=0.2, help="PPO clip epsilon")
+    parser.add_argument("--ent-coef", "--ent_coef", type=float, default=0.01, help="Entropy coefficient")
+    parser.add_argument("--vf-coef", "--vf_coef", type=float, default=0.5, help="Value function coefficient")
+    parser.add_argument("--max-grad-norm", "--max_grad_norm", type=float, default=0.5, help="Max gradient norm")
+    parser.add_argument("--anneal-lr", "--anneal_lr", action="store_true", default=True, help="Use learning rate annealing")
     
     # Muon optimizer args
-    parser.add_argument("--use-muon", action="store_true", default=False, help="Use Muon optimizer for weight matrices")
-    parser.add_argument("--muon-lr", type=float, default=0.02, help="Learning rate for Muon (weight matrices)")
-    parser.add_argument("--aux-adam-lr", type=float, default=None, help="Learning rate for Adam (aux params, defaults to --lr)")
-    parser.add_argument("--muon-momentum", type=float, default=0.95, help="Momentum for Muon optimizer")
-    parser.add_argument("--muon-nesterov", action="store_true", default=True, help="Use Nesterov momentum in Muon")
+    parser.add_argument("--use-muon", "--use_muon", action="store_true", default=False, help="Use Muon optimizer for weight matrices")
+    parser.add_argument("--muon-lr", "--muon_lr", type=float, default=0.02, help="Learning rate for Muon (weight matrices)")
+    parser.add_argument("--aux-adam-lr", "--aux_adam_lr", type=float, default=None, help="Learning rate for Adam (aux params, defaults to --lr)")
+    parser.add_argument("--muon-momentum", "--muon_momentum", type=float, default=0.95, help="Momentum for Muon optimizer")
+    parser.add_argument("--muon-nesterov", "--muon_nesterov", action="store_true", default=True, help="Use Nesterov momentum in Muon")
     
     # Network args
-    parser.add_argument("--d-model", type=int, default=64, help="Transformer model dimension")
-    parser.add_argument("--num-layers", type=int, default=2, help="Number of transformer layers")
-    parser.add_argument("--num-heads", type=int, default=4, help="Number of attention heads")
+    parser.add_argument("--d-model", "--d_model", type=int, default=64, help="Transformer model dimension")
+    parser.add_argument("--num-layers", "--num_layers", type=int, default=2, help="Number of transformer layers")
+    parser.add_argument("--num-heads", "--num_heads", type=int, default=4, help="Number of attention heads")
     parser.add_argument("--dropout", type=float, default=0.1, help="Dropout rate")
     
     # Logging args
     parser.add_argument("--wandb", action="store_true", help="Use Weights & Biases logging")
-    parser.add_argument("--wandb-project", type=str, default="snake-jax-ppo", help="WandB project name")
-    parser.add_argument("--wandb-entity", type=str, default=None, help="WandB entity")
-    parser.add_argument("--run-name", type=str, default=None, help="Run name")
-    parser.add_argument("--save-dir", type=str, default="models", help="Directory to save models")
-    parser.add_argument("--save-freq", type=int, default=100, help="Save model every N updates")
+    parser.add_argument("--wandb-project", "--wandb_project", type=str, default="snake-jax-ppo", help="WandB project name")
+    parser.add_argument("--wandb-entity", "--wandb_entity", type=str, default=None, help="WandB entity")
+    parser.add_argument("--run-name", "--run_name", type=str, default=None, help="Run name")
+    parser.add_argument("--save-dir", "--save_dir", type=str, default="models", help="Directory to save models")
+    parser.add_argument("--save-freq", "--save_freq", type=int, default=100, help="Save model every N updates")
+    
+    # Evaluation args
+    parser.add_argument("--eval-freq", "--eval_freq", type=int, default=50, help="Evaluate every N updates (0 to disable)")
+    parser.add_argument("--eval-episodes", "--eval_episodes", type=int, default=128, help="Number of episodes per evaluation")
     
     # Misc args
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
@@ -187,6 +191,8 @@ def main():
         print(f"  Optimizer: Adam")
         print(f"  Learning rate: {config['LR']:.2e}")
     print(f"  Network: d_model={args.d_model}, layers={args.num_layers}, heads={args.num_heads}")
+    if args.eval_freq > 0:
+        print(f"  Evaluation: every {args.eval_freq} updates, {args.eval_episodes} episodes")
     print()
     
     # Create environment with logging wrapper
@@ -225,7 +231,7 @@ def main():
         train_start = time.time()
         
         # Import the step-by-step training function
-        from train_snake_purejaxrl_impl import make_train_step
+        from train_snake_purejaxrl_impl import make_train_step, make_evaluate_fn
         init_fn, make_update_fn = make_train_step(config, env, env_params)
         
         # Initialize training state
@@ -236,11 +242,17 @@ def main():
         # Create JIT-compiled update function
         update_fn = make_update_fn(network)
         
+        # Create JIT-compiled evaluation function if needed
+        if args.eval_freq > 0:
+            evaluate_fn = make_evaluate_fn(env, env_params, num_episodes=args.eval_episodes)
+            print(f"   Evaluation enabled: {args.eval_episodes} episodes every {args.eval_freq} updates")
+        
         print("   Compiling update function (first call will be slow)...")
         print()
         
         # Run training loop with progress bar
         all_metrics = []
+        best_eval_return = float('-inf')
         with tqdm(total=config['TOTAL_TIMESTEPS'], 
                   desc="Training", 
                   unit="steps",
@@ -274,6 +286,41 @@ def main():
                 # Update progress bar
                 steps_completed = config['NUM_STEPS'] * config['NUM_ENVS']
                 pbar.update(steps_completed)
+                
+                # Run evaluation if needed
+                eval_metrics = None
+                if args.eval_freq > 0 and (update_idx + 1) % args.eval_freq == 0:
+                    # Extract current train_state and params
+                    current_train_state = runner_state[0]
+                    current_rng = runner_state[3]
+                    
+                    # Run evaluation
+                    eval_rng, current_rng = jax.random.split(current_rng)
+                    runner_state = (runner_state[0], runner_state[1], runner_state[2], current_rng)
+                    
+                    eval_metrics = evaluate_fn(network, current_train_state.params, eval_rng)
+                    eval_metrics = jax.tree_util.tree_map(lambda x: x.block_until_ready(), eval_metrics)
+                    
+                    # Check if this is the best model so far
+                    eval_return = float(eval_metrics['mean_return'])
+                    if eval_return > best_eval_return:
+                        best_eval_return = eval_return
+                        
+                        # Save best model
+                        if args.wandb:
+                            print(f"\n   🏆 New best eval return: {eval_return:.2f} (prev: {best_eval_return:.2f})")
+                        
+                        # Save to disk
+                        best_model_path = run_dir / "best_model.pkl"
+                        with open(best_model_path, 'wb') as f:
+                            pickle.dump({
+                                'params': current_train_state.params,
+                                'config': config,
+                                'env_config': env_config,
+                                'run_name': run_name,
+                                'eval_metrics': eval_metrics,
+                                'update_idx': update_idx,
+                            }, f)
                 
                 # Log to wandb every update (real-time metrics)
                 # For detailed explanation of metrics, see METRICS_EXPLAINED.md
@@ -337,6 +384,26 @@ def main():
                             # Take the last timestep value from the batch
                             wandb_metrics["train/env_timestep"] = int(metrics['timestep'][-1, 0])
                     
+                    # Log evaluation metrics if available
+                    if eval_metrics is not None:
+                        wandb_metrics.update({
+                            "eval/mean_return": float(eval_metrics['mean_return']),
+                            "eval/std_return": float(eval_metrics['std_return']),
+                            "eval/mean_length": float(eval_metrics['mean_length']),
+                            "eval/mean_score": float(eval_metrics['mean_score']),
+                            "eval/max_return": float(eval_metrics['max_return']),
+                            "eval/max_score": float(eval_metrics['max_score']),
+                            "eval/min_return": float(eval_metrics['min_return']),
+                            "eval/best_return": best_eval_return,
+                        })
+                        
+                        # Update progress bar with eval metrics
+                        pbar.set_postfix({
+                            "eval_ret": f"{float(eval_metrics['mean_return']):.2f}",
+                            "eval_score": f"{float(eval_metrics['mean_score']):.2f}",
+                            "best": f"{best_eval_return:.2f}"
+                        })
+                    
                     # Log the metrics
                     wandb.log(wandb_metrics)
         
@@ -360,6 +427,8 @@ def main():
         print(f"  Total steps: {config['TOTAL_TIMESTEPS']:,}")
         print(f"  Training FPS: {config['TOTAL_TIMESTEPS'] / train_time:,.0f}")
         print(f"  Time per update: {train_time / config['NUM_UPDATES']:.3f}s")
+        if args.eval_freq > 0:
+            print(f"  Best eval return: {best_eval_return:.2f}")
         print()
     
     except KeyboardInterrupt:
@@ -414,6 +483,12 @@ def main():
                     "timing/training_fps": config['TOTAL_TIMESTEPS'] / train_time,
                     "interrupted": interrupted,
                 })
+                
+                # Log best eval return if evaluation was enabled
+                if args.eval_freq > 0 and best_eval_return > float('-inf'):
+                    wandb.log({
+                        "final/best_eval_return": best_eval_return,
+                    })
         
         if not interrupted:
             print("🎉 GPU-native training complete!")

@@ -23,6 +23,29 @@ source .venv/bin/activate
 python test_snake_jax.py
 ```
 
+### 🎯 NEW: Evaluation Metrics for Hyperparameter Sweeps
+
+The JAX implementation now includes comprehensive evaluation during training:
+
+- ✅ **Greedy evaluation** (no exploration noise)
+- ✅ **Stable metrics** for hyperparameter optimization
+- ✅ **Automatic best model saving**
+- ✅ **WandB sweep integration**
+
+```bash
+# Train with evaluation every 50 updates
+python train_snake_purejaxrl.py \
+    --wandb \
+    --eval-freq 50 \
+    --eval-episodes 128
+
+# Run a hyperparameter sweep
+wandb sweep wandb_sweep_jax_ppo_eval.yaml
+wandb agent <sweep-id>
+```
+
+**See [`EVALUATION_SUMMARY.md`](EVALUATION_SUMMARY.md) and [`docs/SWEEP_GUIDE.md`](docs/SWEEP_GUIDE.md) for details!**
+
 ## Setup
 
 Create/activate a virtual environment at `.venv` and install deps:

@@ -1,0 +1,105 @@
+# WandB Sweep Configuration for Snake JAX PPO with Evaluation
+# This sweep optimizes hyperparameters using evaluation metrics
+
+program: train_snake_purejaxrl.py
+method: bayes  # Bayesian optimization for efficient search
+metric:
+  name: eval/mean_return  # Primary metric: mean return on greedy evaluation
+  goal: maximize
+
+# Early stopping based on evaluation performance
+early_terminate:
+  type: hyperband
+  min_iter: 50  # Run at least 50 evaluations
+  eta: 2
+  s: 3
+
+parameters:
+  # Environment (fixed for this sweep)
+  width:
+    value: 10
+  height:
+    value: 10
+  max_steps:
+    value: 500
+  
+  # Training budget
+  total_timesteps:
+    value: 5000000
+  num_envs:
+    value: 2048
+  num_steps:
+    value: 128
+  
+  # Evaluation settings (more frequent and thorough for sweeps)
+  eval_freq:
+    value: 25  # Evaluate every 25 updates
+  eval_episodes:
+    value: 256  # More episodes for stable metrics
+  
+  # Learning rate (main hyperparameter)
+  lr:
+    distribution: log_uniform_values
+    min: 0.00001
+    max: 0.001
+  
+  # PPO hyperparameters
+  gamma:
+    values: [0.99, 0.995, 0.999]
+  
+  gae_lambda:
+    distribution: uniform
+    min: 0.90
+    max: 0.99
+  
+  clip_eps:
+    values: [0.1, 0.2, 0.3]
+  
+  ent_coef:
+    distribution: log_uniform_values
+    min: 0.001
+    max: 0.1
+  
+  vf_coef:
+    values: [0.25, 0.5, 1.0]
+  
+  max_grad_norm:
+    values: [0.5, 1.0, 2.0]
+  
+  # Network architecture
+  d_model:
+    values: [32, 64, 128]
+  
+  num_layers:
+    values: [1, 2, 3]
+  
+  num_heads:
+    values: [2, 4, 8]
+  
+  dropout:
+    distribution: uniform
+    min: 0.0
+    max: 0.3
+  
+  # Minibatch settings
+  update_epochs:
+    values: [2, 4, 8]
+  
+  num_minibatches:
+    values: [16, 32, 64]
+  
+  # Fixed parameters (not boolean flags)
+  wandb_project:
+    value: "snake-jax-ppo-sweep"
+  
+  save_freq:
+    value: 100
+
+# Command to run - include boolean flags directly in command
+command:
+  - ${env}
+  - python
+  - ${program}
+  - --wandb
+  - --anneal-lr
+  - ${args}
