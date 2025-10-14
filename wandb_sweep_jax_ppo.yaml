@@ -1,0 +1,103 @@
+program: train_snake_purejaxrl.py
+method: bayes
+metric:
+  name: final/mean_return
+  goal: maximize
+parameters:
+  # Learning rates
+  lr:
+    distribution: log_uniform_values
+    min: 0.00005
+    max: 0.001
+  
+  # Environment rewards
+  apple-reward:
+    distribution: uniform
+    min: 5.0
+    max: 20.0
+  death-penalty:
+    distribution: uniform
+    min: -20.0
+    max: -5.0
+  step-penalty:
+    distribution: log_uniform_values
+    min: -0.1
+    max: -0.001
+  
+  # PPO-specific parameters
+  gamma:
+    distribution: uniform
+    min: 0.95
+    max: 0.995
+  gae-lambda:
+    distribution: uniform
+    min: 0.9
+    max: 0.99
+  clip-eps:
+    distribution: uniform
+    min: 0.1
+    max: 0.3
+  ent-coef:
+    distribution: log_uniform_values
+    min: 0.001
+    max: 0.1
+  vf-coef:
+    distribution: uniform
+    min: 0.25
+    max: 1.0
+  max-grad-norm:
+    distribution: uniform
+    min: 0.3
+    max: 1.0
+  
+  # Training parameters
+  update-epochs:
+    distribution: int_uniform
+    min: 2
+    max: 8
+  num-minibatches:
+    distribution: q_uniform
+    min: 16
+    max: 64
+    q: 16
+  
+  # Network architecture
+  d-model:
+    values: [32, 64, 128]
+  num-layers:
+    values: [1, 2, 3, 4]
+  num-heads:
+    values: [2, 4, 8]
+  dropout:
+    distribution: uniform
+    min: 0.0
+    max: 0.3
+  
+  # Muon optimizer parameters
+  muon-lr:
+    distribution: uniform
+    min: 0.01
+    max: 0.05
+  aux-adam-lr:
+    distribution: log_uniform_values
+    min: 0.00005
+    max: 0.001
+  muon-momentum:
+    distribution: uniform
+    min: 0.90
+    max: 0.99
+
+command:
+  - ${env}
+  - ${interpreter}
+  - ${program}
+  - ${args}
+  - "--wandb"
+  - "--use-muon"
+  - "--num-envs=2048"
+  - "--num-steps=128"
+  - "--total-timesteps=5000000"
+  - "--width=10"
+  - "--height=10"
+  - "--max-steps=500"
+  - "--save-dir=./models/sweep"
