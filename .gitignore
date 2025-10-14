@@ -11,3 +11,4 @@ models/
 wandb/
 .env
 benchmark_results_*.json
+*.mp4
