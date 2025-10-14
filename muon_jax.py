@@ -47,14 +47,19 @@ def muon(
         
         This iteratively computes G * (3I - G^T G) / 2 to produce an orthogonal matrix.
         """
-        # Normalize to make it closer to orthogonal
+        # Handle different dimensionalities
+        orig_shape = G.shape
+        if G.ndim == 2:
+            # 2D case - add dummy dimension for uniform processing
+            G = G[..., None]
+        
         a, b, c = G.shape
         # Reshape to 2D for orthogonalization
         G_2d = G.reshape(a, b * c)
         
-        # Initial scaling
-        norm_sq = jnp.sum(G_2d * G_2d)
-        G_2d = G_2d / jnp.sqrt(norm_sq + eps)
+        # Initial scaling - use linalg.norm for better performance
+        norm_val = jnp.linalg.norm(G_2d)
+        G_2d = G_2d / (norm_val + eps)
         
         # Newton-Schulz iterations
         def ns_step(G_mat, _):
@@ -65,7 +70,10 @@ def muon(
         G_2d, _ = jax.lax.scan(ns_step, G_2d, None, length=steps)
         
         # Reshape back
-        return G_2d.reshape(a, b, c)
+        result = G_2d.reshape(a, b, c)
+        if len(orig_shape) == 2:
+            result = result[..., 0]
+        return result
     
     def init_fn(params):
         momentum = jax.tree_util.tree_map(jnp.zeros_like, params)
@@ -91,15 +99,7 @@ def muon(
                 mom_new = momentum * mom + grad
                 
                 # Apply Newton-Schulz orthogonalization for weight matrices
-                if grad.ndim == 2:
-                    # For 2D weights, orthogonalize directly
-                    # Add batch dimension for consistency
-                    expanded = mom_new[jnp.newaxis, ...]
-                    ortho = newton_schulz_orthogonalize(expanded, steps=5)
-                    mom_new = ortho[0]
-                elif grad.ndim >= 3:
-                    # For higher-dim tensors (e.g., attention weights)
-                    mom_new = newton_schulz_orthogonalize(mom_new, steps=5)
+                mom_new = newton_schulz_orthogonalize(mom_new, steps=5)
                 
                 # Apply Nesterov momentum if requested
                 if nesterov:
