@@ -26,8 +26,8 @@ parameters:
     max: 0.7
   target-update:
     distribution: int_uniform
-    min: 5
-    max: 20
+    min: 500
+    max: 5000
   loop-end-bonus:
     distribution: uniform
     min: 0.005
