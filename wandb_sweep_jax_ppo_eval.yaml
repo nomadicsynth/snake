@@ -25,17 +25,17 @@ parameters:
   
   # Training budget
   total_timesteps:
-    value: 5000000
+    value: 5000000  # 5M = 38 updates = 7 evals @ freq=5 (~8 min per run)
   num_envs:
-    value: 2048
+    value: 1024  # Reduced from 2048 to get more updates per timestep
   num_steps:
     value: 128
   
-  # Evaluation settings (more frequent and thorough for sweeps)
+  # Evaluation settings
   eval_freq:
-    value: 25  # Evaluate every 25 updates
+    value: 5  # Evaluate every 5 updates (will run 7 times)
   eval_episodes:
-    value: 256  # More episodes for stable metrics
+    value: 128  # 128 episodes per eval
   
   # Optimizer selection
   use_muon:
