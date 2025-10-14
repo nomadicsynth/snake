@@ -97,8 +97,8 @@ def make_evaluate_fn(env, env_params, num_episodes=128):
             # Calculate metrics
             episode_return = jnp.sum(rewards)
             episode_length = jnp.sum(dones)  # Count number of steps until done
-            # Get final score from state
-            final_score = final_state.snake_state.score
+            # Get final score from state - LogWrapper wraps the env_state
+            final_score = final_state.env_state.snake_state.score
             
             return {
                 'return': episode_return,
