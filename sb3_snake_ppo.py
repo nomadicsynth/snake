@@ -37,7 +37,7 @@ from stable_baselines3.common.env_checker import check_env
 
 try:
     # Optional: Muon optimizer for hidden weights
-    from muon import Muon
+    from muon import MuonWithAuxAdam
     _MUON_AVAILABLE = True
 except Exception:
     _MUON_AVAILABLE = False
@@ -767,21 +767,22 @@ def make_muon_optimizer_factory(muon_lr: float, aux_lr: float):
             else:
                 aux_params.append(p)
         
-        # Build parameter groups
+        # Build parameter groups for MuonWithAuxAdam
         param_groups = []
         
         if len(hidden_weights) > 0:
             param_groups.append({
                 'params': hidden_weights,
+                'use_muon': True,
                 'lr': muon_lr,
-                'momentum': 0.95,  # Muon default
             })
         
         if len(aux_params) > 0:
             param_groups.append({
                 'params': aux_params,
+                'use_muon': False,
                 'lr': aux_lr,
-                'momentum': 0.95,
+                'betas': (0.9, 0.95),  # Adam betas for aux params
             })
         
         if len(param_groups) == 0:
@@ -790,7 +791,7 @@ def make_muon_optimizer_factory(muon_lr: float, aux_lr: float):
         print(f"Muon optimizer: {len(hidden_weights)} hidden weight tensors (lr={muon_lr}), "
               f"{len(aux_params)} auxiliary params (lr={aux_lr})")
         
-        return Muon(param_groups)
+        return MuonWithAuxAdam(param_groups)
     
     return optimizer_factory
 
@@ -980,19 +981,6 @@ def train_sb3(
     n_steps = max_steps  # Number of steps to run for each environment per update
     max_grad_norm = 0.5  # Maximum gradient norm for gradient clipping
     
-    # Prepare optimizer configuration
-    optimizer_kwargs = {}
-    if use_muon:
-        if not _MUON_AVAILABLE:
-            print("WARNING: --use-muon set but Muon library not available. Falling back to Adam.")
-        else:
-            # Determine auxiliary Adam learning rate
-            aux_lr = aux_adam_lr if aux_adam_lr is not None else lr
-            # Create custom optimizer factory
-            optimizer_class = make_muon_optimizer_factory(muon_lr, aux_lr)
-            optimizer_kwargs = {"optimizer_class": optimizer_class}
-            print(f"Using Muon optimizer: hidden_lr={muon_lr}, aux_lr={aux_lr}")
-    
     model = PPO(
         "MlpPolicy",
         env,
@@ -1011,8 +999,63 @@ def train_sb3(
         verbose=1,
         device="auto",
         seed=seed,
-        **optimizer_kwargs,
     )
+    
+    # Replace optimizer with Muon if requested
+    if use_muon:
+        if not _MUON_AVAILABLE:
+            print("WARNING: --use-muon set but Muon library not available. Falling back to Adam.")
+        else:
+            # Initialize torch.distributed for Muon (required by MuonWithAuxAdam)
+            import torch.distributed as dist
+            if dist.is_available() and not dist.is_initialized():
+                try:
+                    backend = "nccl" if torch.cuda.is_available() else "gloo"
+                    init_file = f"/tmp/muon_pg_{os.getpid()}"
+                    dist.init_process_group(backend=backend, init_method=f"file://{init_file}", rank=0, world_size=1)
+                    print("Initialized torch.distributed (single-process) for Muon.")
+                except Exception as e:
+                    print(f"WARNING: Could not initialize torch.distributed for Muon: {e}")
+                    print("Falling back to Adam optimizer.")
+                    use_muon = False
+            
+            if use_muon:
+                # Determine auxiliary Adam learning rate
+                aux_lr = aux_adam_lr if aux_adam_lr is not None else lr
+                print(f"Using Muon optimizer: hidden_lr={muon_lr}, aux_lr={aux_lr}")
+                
+                # Create Muon optimizer and replace the default optimizer
+                optimizer_factory = make_muon_optimizer_factory(muon_lr, aux_lr)
+                model.policy.optimizer = optimizer_factory(model.policy.parameters())
+
+    # Apply BF16 mixed precision by wrapping policy forward methods
+    if use_bf16 and torch.cuda.is_available():
+        original_forward = model.policy.forward
+        original_evaluate_actions = model.policy.evaluate_actions
+        original_predict_values = model.policy.predict_values
+        
+        def bf16_forward(*args, **kwargs):
+            with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+                result = original_forward(*args, **kwargs)
+            # Convert outputs back to float32 for buffer compatibility
+            if isinstance(result, tuple):
+                return tuple(x.float() if isinstance(x, torch.Tensor) and x.dtype == torch.bfloat16 else x for x in result)
+            return result.float() if isinstance(result, torch.Tensor) and result.dtype == torch.bfloat16 else result
+        
+        def bf16_evaluate_actions(obs, actions):
+            with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+                values, log_prob, entropy = original_evaluate_actions(obs, actions)
+            # Ensure outputs are float32
+            return values.float(), log_prob.float(), entropy.float() if entropy is not None else None
+        
+        def bf16_predict_values(obs):
+            with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+                values = original_predict_values(obs)
+            return values.float()
+        
+        model.policy.forward = bf16_forward
+        model.policy.evaluate_actions = bf16_evaluate_actions
+        model.policy.predict_values = bf16_predict_values
 
     # Apply optimizations from .env configuration (or CLI overrides)
     if use_compile and hasattr(torch, 'compile'):
@@ -1077,16 +1120,21 @@ def train_sb3(
             wandb_cb = WandbCallback()
             callbacks.append(wandb_cb)
         
-        # Apply mixed precision and SDPA optimizations during training
+        # Apply SDPA optimizations during training
+        # Note: BF16 is already applied to policy methods if enabled
         with get_sdpa_context():
             if use_bf16 and torch.cuda.is_available():
                 print("🚀 Starting training with BF16 mixed precision...")
-                with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
-                    model.learn(total_timesteps=total_timesteps, callback=CallbackList(callbacks))
             else:
                 print("🚀 Starting training with FP32 precision...")
-                model.learn(total_timesteps=total_timesteps, callback=CallbackList(callbacks))
+            model.learn(total_timesteps=total_timesteps, callback=CallbackList(callbacks))
     finally:
+        # Clean up torch.distributed if initialized for Muon
+        if use_muon and _MUON_AVAILABLE:
+            import torch.distributed as dist
+            if dist.is_initialized():
+                dist.destroy_process_group()
+        
         # Ensure the terminal cursor is visible again
         print("\033[?25h", end="", flush=True)
         

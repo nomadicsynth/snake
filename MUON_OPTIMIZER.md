@@ -14,7 +14,9 @@ The implementation follows the pattern from `example-train-with-muon.py`:
    - **Hidden weights** (2D+ tensors): Use Muon optimizer with custom learning rate
    - **Auxiliary parameters** (1D tensors, embeddings, biases): Use Adam-like optimization
 
-2. **Optimizer Factory**: A factory function `make_muon_optimizer_factory()` creates custom optimizer instances compatible with stable-baselines3's API.
+2. **Optimizer Factory**: A factory function `make_muon_optimizer_factory()` creates custom optimizer instances.
+
+3. **Post-Creation Replacement**: The model is created with default Adam optimizer, then the optimizer is replaced with Muon after initialization. This is necessary because stable-baselines3 doesn't support custom optimizers in the constructor.
 
 ### Command-Line Arguments
 
