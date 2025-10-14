@@ -37,11 +37,31 @@ parameters:
   eval_episodes:
     value: 256  # More episodes for stable metrics
   
-  # Learning rate (main hyperparameter)
+  # Optimizer selection
+  use_muon:
+    values: [true, false]
+  
+  # Learning rate (for Adam optimizer)
   lr:
     distribution: log_uniform_values
     min: 0.00001
     max: 0.001
+  
+  # Muon optimizer parameters (only used when use_muon=true)
+  muon_lr:
+    distribution: log_uniform_values
+    min: 0.001
+    max: 0.1
+  
+  aux_adam_lr:
+    distribution: log_uniform_values
+    min: 0.00001
+    max: 0.001
+  
+  muon_momentum:
+    distribution: uniform
+    min: 0.90
+    max: 0.99
   
   # PPO hyperparameters
   gamma:

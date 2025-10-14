@@ -38,6 +38,18 @@ import pickle
 from purejaxrl.purejaxrl.wrappers import LogWrapper
 
 
+def str2bool(v):
+    """Convert string to boolean for argparse"""
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
+
 def parse_args():
     """Parse command line arguments"""
     parser = argparse.ArgumentParser(description="Train Snake with JAX PPO")
@@ -66,7 +78,7 @@ def parse_args():
     parser.add_argument("--anneal-lr", "--anneal_lr", action="store_true", default=True, help="Use learning rate annealing")
     
     # Muon optimizer args
-    parser.add_argument("--use-muon", "--use_muon", action="store_true", default=False, help="Use Muon optimizer for weight matrices")
+    parser.add_argument("--use-muon", "--use_muon", type=str2bool, nargs='?', const=True, default=False, help="Use Muon optimizer for weight matrices")
     parser.add_argument("--muon-lr", "--muon_lr", type=float, default=0.02, help="Learning rate for Muon (weight matrices)")
     parser.add_argument("--aux-adam-lr", "--aux_adam_lr", type=float, default=None, help="Learning rate for Adam (aux params, defaults to --lr)")
     parser.add_argument("--muon-momentum", "--muon_momentum", type=float, default=0.95, help="Momentum for Muon optimizer")
