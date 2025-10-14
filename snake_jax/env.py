@@ -20,17 +20,17 @@ class SnakeState(NamedTuple):
     # Snake body positions: (max_length, 2) where each row is (x, y)
     # Only the first `snake_length` positions are valid
     snake_body: jnp.ndarray  # (max_length, 2) int32
-    snake_length: jnp.int32  # Current length of snake
+    snake_length: int  # Current length of snake
     direction: jnp.ndarray   # (2,) int32 - current direction (dx, dy)
     
     # Food position
     food_pos: jnp.ndarray    # (2,) int32 - (x, y)
     
     # Episode state
-    score: jnp.int32
-    done: jnp.bool_
-    step_count: jnp.int32
-    
+    score: int
+    done: bool
+    step_count: int
+
     # RNG state for food placement
     rng: jax.random.PRNGKey
 
@@ -76,7 +76,7 @@ class SnakeEnv:
         )
     
     @partial(jax.jit, static_argnums=(0,))
-    def step(self, state: SnakeState, action: jnp.int32) -> Tuple[SnakeState, jnp.ndarray, jnp.bool_, dict]:
+    def step(self, state: SnakeState, action: int) -> Tuple[SnakeState, jnp.ndarray, bool, dict]:
         """
         Step the environment
         
@@ -191,7 +191,7 @@ class SnakeEnv:
         )
     
     @partial(jax.jit, static_argnums=(0,))
-    def _action_to_direction(self, action: jnp.int32) -> jnp.ndarray:
+    def _action_to_direction(self, action: int) -> jnp.ndarray:
         """Convert action to direction vector"""
         # 0=up, 1=right, 2=down, 3=left
         directions = jnp.array([
@@ -204,7 +204,7 @@ class SnakeEnv:
     
     @partial(jax.jit, static_argnums=(0,))
     def _place_food(self, rng: jax.random.PRNGKey, snake_body: jnp.ndarray, 
-                    snake_length: jnp.int32) -> jnp.ndarray:
+                    snake_length: int) -> jnp.ndarray:
         """
         Place food in a random valid position
         
