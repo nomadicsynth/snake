@@ -131,6 +131,27 @@ def main():
     print(f"   Compare to SB3: {elapsed:.1f}s vs ~30-50 minutes")
     print(f"   Speedup: ~{(30*60)/elapsed:.0f}x faster!")
     print()
+    
+    # Save the trained model
+    import pickle
+    os.makedirs("models", exist_ok=True)
+    model_path = "models/snake_jax_ppo.pkl"
+    
+    # Extract train_state from result
+    # train_state is a dict with 'runner_state' and 'metrics'
+    # runner_state is (train_state, env_state, obs, rng)
+    final_train_state = train_state['runner_state'][0]
+    
+    # Save params and config
+    with open(model_path, 'wb') as f:
+        pickle.dump({
+            'params': final_train_state.params,
+            'config': config,
+            'env_config': env_config,
+        }, f)
+    
+    print(f"💾 Model saved to: {model_path}")
+    print()
 
 
 if __name__ == "__main__":
