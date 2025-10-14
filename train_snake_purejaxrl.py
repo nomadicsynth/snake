@@ -291,11 +291,6 @@ def main():
                 
                 all_metrics.append(metrics)
                 
-                # Debug: Print metric keys on first update to verify structure
-                if update_idx == 0:
-                    print(f"   Metrics being logged: {', '.join(sorted(metrics.keys()))}")
-                    print()
-                
                 # Update progress bar
                 steps_completed = config['NUM_STEPS'] * config['NUM_ENVS']
                 pbar.update(steps_completed)
