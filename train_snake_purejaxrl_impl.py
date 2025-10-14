@@ -153,6 +153,22 @@ def make_train_step(config, env, env_params):
         frac = 1.0 - count / config["NUM_UPDATES"]
         return config["LR"] * frac
     
+    def muon_schedule(count):
+        """Muon learning rate schedule"""
+        if config.get("ANNEAL_LR", False):
+            frac = 1.0 - count / config["NUM_UPDATES"]
+            return config.get("MUON_LR", 0.02) * frac
+        else:
+            return config.get("MUON_LR", 0.02)
+    
+    def aux_schedule(count):
+        """Auxiliary (Adam) learning rate schedule for Muon"""
+        if config.get("ANNEAL_LR", False):
+            frac = 1.0 - count / config["NUM_UPDATES"]
+            return config.get("AUX_ADAM_LR", config["LR"]) * frac
+        else:
+            return config.get("AUX_ADAM_LR", config["LR"])
+    
     def init_train_state(rng):
         """Initialize network and training state"""
         # INIT NETWORK
@@ -172,14 +188,13 @@ def make_train_step(config, env, env_params):
         use_muon = config.get("USE_MUON", False) and _MUON_AVAILABLE
         
         if use_muon:
-            muon_lr = config.get("MUON_LR", 0.02)
-            aux_lr = config.get("AUX_ADAM_LR", config["LR"])
             momentum = config.get("MUON_MOMENTUM", 0.95)
             nesterov = config.get("MUON_NESTEROV", True)
             
+            # Use schedules for both Muon and aux learning rates
             tx = chain_with_muon(
-                muon_lr=muon_lr,
-                aux_lr=aux_lr,
+                muon_lr=muon_schedule,
+                aux_lr=aux_schedule,
                 max_grad_norm=config["MAX_GRAD_NORM"],
                 momentum=momentum,
                 nesterov=nesterov,
@@ -368,6 +383,16 @@ def make_train_step(config, env, env_params):
             # Take mean across epochs and minibatches for logging
             total_loss, value_loss, actor_loss, entropy = loss_info
             
+            # Calculate current learning rate
+            if config.get("USE_MUON", False):
+                # For Muon, calculate both LRs using schedules
+                current_lr = muon_schedule(update_idx)
+                current_aux_lr = aux_schedule(update_idx)
+            elif config["ANNEAL_LR"]:
+                current_lr = linear_schedule(update_idx)
+            else:
+                current_lr = config["LR"]
+            
             # Create combined metrics dict
             # Note: traj_batch.info is a dict from LogWrapper, but we can't modify it in JIT
             # So we return it as-is and add loss metrics in Python land
@@ -377,7 +402,12 @@ def make_train_step(config, env, env_params):
                 'value_loss': jnp.mean(value_loss),
                 'actor_loss': jnp.mean(actor_loss),
                 'entropy': jnp.mean(entropy),
+                'learning_rate': current_lr,
             }
+            
+            # Add aux learning rate for Muon
+            if config.get("USE_MUON", False):
+                loss_metric['aux_learning_rate'] = current_aux_lr
             
             runner_state = (train_state, env_state, last_obs, rng)
             # Return both env and loss metrics as a tuple
@@ -659,6 +689,30 @@ def make_train_with_callback(config, env, env_params, progress_callback):
         )
         return config["LR"] * frac
     
+    def muon_schedule(count):
+        """Muon learning rate schedule"""
+        if config.get("ANNEAL_LR", False):
+            frac = (
+                1.0
+                - (count // (config["NUM_MINIBATCHES"] * config["UPDATE_EPOCHS"]))
+                / config["NUM_UPDATES"]
+            )
+            return config.get("MUON_LR", 0.02) * frac
+        else:
+            return config.get("MUON_LR", 0.02)
+    
+    def aux_schedule(count):
+        """Auxiliary (Adam) learning rate schedule for Muon"""
+        if config.get("ANNEAL_LR", False):
+            frac = (
+                1.0
+                - (count // (config["NUM_MINIBATCHES"] * config["UPDATE_EPOCHS"]))
+                / config["NUM_UPDATES"]
+            )
+            return config.get("AUX_ADAM_LR", config["LR"]) * frac
+        else:
+            return config.get("AUX_ADAM_LR", config["LR"])
+    
     def train(rng):
         # INIT NETWORK
         network = TransformerPolicy(
@@ -678,14 +732,13 @@ def make_train_with_callback(config, env, env_params, progress_callback):
         
         if use_muon:
             # Use Muon optimizer for weight matrices, Adam for auxiliary params
-            muon_lr = config.get("MUON_LR", 0.02)
-            aux_lr = config.get("AUX_ADAM_LR", config["LR"])
             momentum = config.get("MUON_MOMENTUM", 0.95)
             nesterov = config.get("MUON_NESTEROV", True)
             
+            # Use schedules for both Muon and aux learning rates
             tx = chain_with_muon(
-                muon_lr=muon_lr,
-                aux_lr=aux_lr,
+                muon_lr=muon_schedule,
+                aux_lr=aux_schedule,
                 max_grad_norm=config["MAX_GRAD_NORM"],
                 momentum=momentum,
                 nesterov=nesterov,
@@ -878,6 +931,16 @@ def make_train_with_callback(config, env, env_params, progress_callback):
             # Take mean across epochs and minibatches for logging
             total_loss, value_loss, actor_loss, entropy = loss_info
             
+            # Calculate current learning rate
+            if config.get("USE_MUON", False):
+                # For Muon, calculate both LRs using schedules
+                current_lr = muon_schedule(update_idx)
+                current_aux_lr = aux_schedule(update_idx)
+            elif config.get("ANNEAL_LR", False):
+                current_lr = linear_schedule(update_idx)
+            else:
+                current_lr = config["LR"]
+            
             # Return both environment info and loss metrics separately
             env_metric = traj_batch.info  # Dict from LogWrapper
             loss_metric = {
@@ -885,7 +948,12 @@ def make_train_with_callback(config, env, env_params, progress_callback):
                 'value_loss': jnp.mean(value_loss),
                 'actor_loss': jnp.mean(actor_loss),
                 'entropy': jnp.mean(entropy),
+                'learning_rate': current_lr,
             }
+            
+            # Add aux learning rate for Muon
+            if config.get("USE_MUON", False):
+                loss_metric['aux_learning_rate'] = current_aux_lr
             
             # Call progress callback using io_callback
             # Extract only the metrics dict to pass to callback

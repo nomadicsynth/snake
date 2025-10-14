@@ -151,8 +151,8 @@ def muon(
 
 
 def multi_transform_with_muon(
-    muon_lr: float,
-    aux_lr: float,
+    muon_lr,  # Can be float or schedule (callable)
+    aux_lr,   # Can be float or schedule (callable)
     momentum: float = 0.95,
     nesterov: bool = True,
 ) -> base.GradientTransformation:
@@ -161,8 +161,8 @@ def multi_transform_with_muon(
     and Adam to auxiliary parameters (biases, embeddings, etc.).
     
     Args:
-        muon_lr: Learning rate for Muon (weight matrices)
-        aux_lr: Learning rate for Adam (auxiliary parameters)
+        muon_lr: Learning rate for Muon (weight matrices). Can be a float or a schedule (callable).
+        aux_lr: Learning rate for Adam (auxiliary parameters). Can be a float or a schedule (callable).
         momentum: Momentum for Muon
         nesterov: Whether to use Nesterov momentum for Muon
     
@@ -187,8 +187,8 @@ def multi_transform_with_muon(
 
 
 def chain_with_muon(
-    muon_lr: float,
-    aux_lr: float,
+    muon_lr,  # Can be float or schedule (callable)
+    aux_lr,   # Can be float or schedule (callable)
     max_grad_norm: float,
     momentum: float = 0.95,
     nesterov: bool = True,
@@ -199,8 +199,8 @@ def chain_with_muon(
     This is the recommended way to use Muon with gradient clipping.
     
     Args:
-        muon_lr: Learning rate for Muon (weight matrices)
-        aux_lr: Learning rate for Adam (auxiliary parameters)
+        muon_lr: Learning rate for Muon (weight matrices). Can be a float or a schedule (callable).
+        aux_lr: Learning rate for Adam (auxiliary parameters). Can be a float or a schedule (callable).
         max_grad_norm: Maximum gradient norm for clipping
         momentum: Momentum for Muon
         nesterov: Whether to use Nesterov momentum for Muon

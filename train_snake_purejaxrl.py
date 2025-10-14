@@ -360,6 +360,10 @@ def main():
                             wandb_metrics["loss/actor"] = float(metrics['actor_loss'])
                         if 'entropy' in metrics:
                             wandb_metrics["loss/entropy"] = float(metrics['entropy'])
+                        if 'learning_rate' in metrics:
+                            wandb_metrics["train/learning_rate"] = float(metrics['learning_rate'])
+                        if 'aux_learning_rate' in metrics:
+                            wandb_metrics["train/aux_learning_rate"] = float(metrics['aux_learning_rate'])
                         
                         if 'returned_episode_returns' in metrics and 'returned_episode' in metrics:
                             # With LogWrapper, returned_episode is a boolean mask indicating which envs completed
