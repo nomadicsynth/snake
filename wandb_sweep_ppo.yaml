@@ -1,0 +1,72 @@
+program: sb3_snake_ppo.py
+method: bayes
+metric:
+  name: eval/score
+  goal: maximize
+parameters:
+  lr:
+    distribution: uniform
+    min: 0.0001
+    max: 0.01
+  apple-reward:
+    distribution: int_uniform
+    min: 10
+    max: 40
+  death-penalty:
+    distribution: int_uniform
+    min: 5
+    max: 20
+  shaping-coef:
+    distribution: uniform
+    min: 0.1
+    max: 0.7
+  # PPO-specific parameters
+  ent-coef:
+    distribution: log_uniform_values
+    min: 0.001
+    max: 0.1
+  vf-coef:
+    distribution: uniform
+    min: 0.25
+    max: 1.0
+  clip-range:
+    distribution: uniform
+    min: 0.1
+    max: 0.3
+  gae-lambda:
+    distribution: uniform
+    min: 0.9
+    max: 0.99
+  n-epochs:
+    distribution: int_uniform
+    min: 5
+    max: 20
+  # Loop shaping parameters
+  loop-end-bonus:
+    distribution: uniform
+    min: 0.005
+    max: 0.2
+  loop-max-period:
+    distribution: int_uniform
+    min: 8
+    max: 32
+  loop-penalty-coef:
+    distribution: uniform
+    min: 0.02
+    max: 0.08
+command:
+  - ${env}
+  - ${interpreter}
+  - ${program}
+  - "train"
+  - ${args}
+  - "--batch-size=64"
+  - "--episodes=500"
+  - "--lr-schedule=constant"
+  - "--width=10"
+  - "--height=10"
+  - "--max-score=10"
+  - "--max-steps=200"
+  - "--eval-episodes=20"
+  - "--wandb"
+  - "--model-path=./models/sb3_snake_ppo_sweep.zip"
