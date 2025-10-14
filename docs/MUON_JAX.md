@@ -15,7 +15,7 @@ The JAX implementation is in `muon_jax.py` and provides:
 ### Key Features
 
 1. **Newton-Schulz Orthogonalization**: Iteratively orthogonalizes momentum updates for 2D+ weight matrices
-2. **Automatic Parameter Separation**: 
+2. **Automatic Parameter Separation**:
    - 2D+ tensors (weight matrices) → Muon optimizer
    - 1D tensors (biases, layer norms) → Adam optimizer
 3. **Nesterov Momentum**: Optional Nesterov-style momentum updates
@@ -45,6 +45,7 @@ python train_snake_purejaxrl.py \
 ### Example Training Commands
 
 #### Basic Muon Training
+
 ```bash
 python train_snake_purejaxrl.py \
     --wandb \
@@ -55,6 +56,7 @@ python train_snake_purejaxrl.py \
 ```
 
 #### Muon with Larger Network
+
 ```bash
 python train_snake_purejaxrl.py \
     --wandb \
@@ -68,6 +70,7 @@ python train_snake_purejaxrl.py \
 ```
 
 #### Without Muon (Standard Adam)
+
 ```bash
 python train_snake_purejaxrl.py \
     --wandb \
@@ -88,6 +91,7 @@ wandb agent <sweep-id>
 ```
 
 The sweep will optimize:
+
 - `muon-lr`: 0.01 - 0.05
 - `aux-adam-lr`: 0.00005 - 0.001  
 - `muon-momentum`: 0.90 - 0.99
@@ -96,17 +100,21 @@ The sweep will optimize:
 ## Benefits
 
 ### 1. Faster Convergence
+
 Muon's orthogonalization helps maintain stable weight matrices, leading to:
+
 - Faster training convergence
 - More stable gradient flow through transformer layers
 - Better handling of vanishing/exploding gradients
 
 ### 2. Better Performance
+
 - Can achieve higher final performance on complex tasks
 - More robust to hyperparameter choices
 - Works well with deeper transformer architectures
 
 ### 3. GPU-Native Training
+
 - Fully compatible with JAX's JIT compilation
 - No performance overhead on GPU
 - Scales efficiently with batch size and model size
@@ -150,6 +158,7 @@ tx = chain_with_muon(
 ```
 
 This creates a gradient transformation that:
+
 1. Clips gradients by global norm
 2. Applies Muon to weight matrices
 3. Applies Adam to auxiliary parameters
@@ -187,12 +196,14 @@ This creates a gradient transformation that:
 ### When to Use Muon
 
 ✅ **Good for:**
+
 - Transformer architectures
 - Deep networks (3+ layers)
 - Long training runs
 - Tasks requiring stable learning
 
 ❌ **May not help:**
+
 - Very small models (1-2 layers)
 - Short training runs (< 1M steps)
 - Simple MLP architectures
@@ -217,6 +228,6 @@ Make sure `muon_jax.py` is in the same directory as `train_snake_purejaxrl.py`.
 
 ## References
 
-- Original Muon: https://github.com/KellerJordan/Muon
-- Optax documentation: https://optax.readthedocs.io/
-- PureJaxRL: https://github.com/luchris429/purejaxrl
+- Original Muon: <https://github.com/KellerJordan/Muon>
+- Optax documentation: <https://optax.readthedocs.io/>
+- PureJaxRL: <https://github.com/luchris429/purejaxrl>
