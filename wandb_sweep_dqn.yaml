@@ -51,7 +51,6 @@ command:
   - "train"
   - ${args}
   - "--batch-size=1024"
-  - "--episodes=500"
   - "--lr-schedule=constant"
   - "--width=10"
   - "--height=10"
