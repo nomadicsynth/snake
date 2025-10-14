@@ -1,5 +1,6 @@
 gymnasium
 matplotlib
+git+https://github.com/KellerJordan/Muon
 ninja
 numpy
 packaging

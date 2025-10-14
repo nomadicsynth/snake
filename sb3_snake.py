@@ -35,6 +35,13 @@ from snake import SnakeGame, DEFAULT_WIDTH, DEFAULT_HEIGHT, DEFAULT_HIDDEN_DIM, 
 from positional_encoding import PositionalEncoding2D
 from stable_baselines3.common.env_checker import check_env
 
+try:
+    # Optional: Muon optimizer for hidden weights
+    from muon import Muon
+    _MUON_AVAILABLE = True
+except Exception:
+    _MUON_AVAILABLE = False
+
 
 # Helper functions to read environment variables with fallback defaults
 def get_env_int(key: str, default: int) -> int:
@@ -723,6 +730,71 @@ class FixedObsSizeWrapper(gym.ObservationWrapper):
         return self._pad_or_crop(obs, self.target_h, self.target_w)
 
 
+def make_muon_optimizer_factory(muon_lr: float, aux_lr: float):
+    """Create an optimizer factory that uses Muon for hidden weights and Adam for other params.
+    
+    Args:
+        muon_lr: Learning rate for Muon (hidden weights in transformer)
+        aux_lr: Learning rate for AdamW (embeddings, output heads, biases/gains)
+    
+    Returns:
+        A function that takes model parameters and returns a Muon optimizer instance.
+    """
+    def optimizer_factory(params):
+        """Factory function compatible with stable-baselines3.
+        
+        Args:
+            params: Iterator of model parameters (from model.parameters())
+        
+        Returns:
+            Muon optimizer instance with appropriate parameter groups.
+        """
+        # Convert params iterator to list
+        all_params = list(params)
+        
+        # Separate parameters by type:
+        # - Hidden weights (2D+ tensors): use Muon
+        # - Everything else (embeddings, biases, 1D params): use Adam
+        hidden_weights = []
+        aux_params = []
+        
+        for p in all_params:
+            if not p.requires_grad:
+                continue
+            # Muon is designed for 2D+ weight matrices in transformer layers
+            if p.ndim >= 2:
+                hidden_weights.append(p)
+            else:
+                aux_params.append(p)
+        
+        # Build parameter groups
+        param_groups = []
+        
+        if len(hidden_weights) > 0:
+            param_groups.append({
+                'params': hidden_weights,
+                'lr': muon_lr,
+                'momentum': 0.95,  # Muon default
+            })
+        
+        if len(aux_params) > 0:
+            param_groups.append({
+                'params': aux_params,
+                'lr': aux_lr,
+                'momentum': 0.95,
+            })
+        
+        if len(param_groups) == 0:
+            raise ValueError("No trainable parameters found!")
+        
+        print(f"Muon optimizer: {len(hidden_weights)} hidden weight tensors (lr={muon_lr}), "
+              f"{len(aux_params)} auxiliary params (lr={aux_lr})")
+        
+        return Muon(param_groups)
+    
+    return optimizer_factory
+
+
 def train_sb3(
     width: int,
     height: int,
@@ -772,6 +844,10 @@ def train_sb3(
     no_compile: bool = False,
     no_flash_attention: bool = False,
     no_bf16: bool = False,
+    # Muon optimizer parameters
+    use_muon: bool = False,
+    muon_lr: float = 0.02,
+    aux_adam_lr: Optional[float] = None,
 ):
     set_seed(seed)
     
@@ -900,6 +976,19 @@ def train_sb3(
     else:
         learning_rate = float(lr)
 
+    # Prepare optimizer configuration
+    optimizer_kwargs = {}
+    if use_muon:
+        if not _MUON_AVAILABLE:
+            print("WARNING: --use-muon set but Muon library not available. Falling back to Adam.")
+        else:
+            # Determine auxiliary Adam learning rate
+            aux_lr = aux_adam_lr if aux_adam_lr is not None else lr
+            # Create custom optimizer factory
+            optimizer_class = make_muon_optimizer_factory(muon_lr, aux_lr)
+            optimizer_kwargs = {"optimizer_class": optimizer_class}
+            print(f"Using Muon optimizer: hidden_lr={muon_lr}, aux_lr={aux_lr}")
+
     model = DQN(
         "MlpPolicy",
         env,
@@ -919,6 +1008,7 @@ def train_sb3(
         verbose=1,
         device="auto",
         seed=seed,
+        **optimizer_kwargs,
     )
 
     # Apply optimizations from .env configuration (or CLI overrides)
@@ -946,6 +1036,11 @@ def train_sb3(
     print("Training Configuration Summary:")
     print("="*60)
     print(f"Batch size: {batch_size}")
+    print(f"Optimizer: {'Muon' if (use_muon and _MUON_AVAILABLE) else 'Adam'}")
+    if use_muon and _MUON_AVAILABLE:
+        print(f"  Muon LR (hidden): {muon_lr}")
+        aux_lr_display = aux_adam_lr if aux_adam_lr is not None else lr
+        print(f"  Adam LR (aux): {aux_lr_display}")
     print(f"torch.compile: {'✓ Enabled' if use_compile else '✗ Disabled'}")
     print(f"FlashAttention: {'✓ Enabled' if use_flash else '✗ Disabled'}")
     print(f"BF16 (mixed precision): {'✓ Enabled' if use_bf16 else '✗ Disabled'}")
@@ -1146,6 +1241,11 @@ def build_arg_parser():
     pt.add_argument("--no-compile", action="store_true", help="Disable torch.compile() even if enabled in .env")
     pt.add_argument("--no-flash-attention", action="store_true", help="Disable FlashAttention even if enabled in .env")
     pt.add_argument("--no-bf16", action="store_true", help="Disable BF16 mixed precision even if enabled in .env")
+    
+    # Muon optimizer
+    pt.add_argument("--use-muon", action="store_true", default=False, help="Use Muon optimizer for hidden weights (transformer layers).")
+    pt.add_argument("--muon-lr", type=float, default=0.02, help="Learning rate for Muon (hidden weights). Default: 0.02")
+    pt.add_argument("--aux-adam-lr", type=float, default=None, help="Learning rate for auxiliary AdamW groups (embeddings, heads, gains/biases). Defaults to --lr if not specified.")
 
     # Play args
     pp = sub.add_parser("play", help="Play using a trained SB3 model")
@@ -1295,6 +1395,9 @@ def main():
         no_compile=getattr(args, "no_compile", False),
         no_flash_attention=getattr(args, "no_flash_attention", False),
         no_bf16=getattr(args, "no_bf16", False),
+        use_muon=getattr(args, "use_muon", False),
+        muon_lr=getattr(args, "muon_lr", 0.02),
+        aux_adam_lr=getattr(args, "aux_adam_lr", None),
     )
 
 class ScoreLimit(gym.Wrapper):
