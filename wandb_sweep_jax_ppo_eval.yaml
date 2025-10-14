@@ -25,7 +25,7 @@ parameters:
   
   # Training budget
   total_timesteps:
-    value: 50000000  # 50M = 380 updates = 70 evals @ freq=5 (~8 min per run)
+    value: 5000000  # 5M = 38 updates = 7 evals @ freq=5
   num_envs:
     value: 1024  # Reduced from 2048 to get more updates per timestep
   num_steps:
