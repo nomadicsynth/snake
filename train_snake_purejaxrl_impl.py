@@ -5,6 +5,11 @@ This is based on PureJaxRL's ppo.py but adapted to use our Transformer network
 and Snake environment.
 """
 
+import warnings
+
+# Suppress pydantic warnings from dependencies (gymnax/brax/purejaxrl)
+warnings.filterwarnings("ignore", category=UserWarning, module="pydantic._internal._generate_schema")
+
 import jax
 import jax.numpy as jnp
 import optax

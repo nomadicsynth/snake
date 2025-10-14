@@ -7,6 +7,8 @@ battle-tested PPO algorithm with wandb tracking and progress bars.
 
 # Set XLA flags to avoid ptxas compilation errors
 import os
+import warnings
+
 # Disable Triton GEMM and use more conservative compilation
 os.environ['XLA_FLAGS'] = (
     '--xla_gpu_enable_triton_gemm=false '
@@ -15,6 +17,9 @@ os.environ['XLA_FLAGS'] = (
 )
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '0.8'
+
+# Suppress pydantic warnings from dependencies (gymnax/brax/purejaxrl)
+warnings.filterwarnings("ignore", category=UserWarning, module="pydantic._internal._generate_schema")
 
 import jax
 import jax.numpy as jnp
