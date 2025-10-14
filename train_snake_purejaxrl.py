@@ -236,6 +236,7 @@ def main():
     network = None
     interrupted = False
     train_time = 0
+    best_eval_metrics = None  # Track metrics for the best model
     
     try:
         # Training loop with progress bar and metrics tracking
@@ -316,13 +317,11 @@ def main():
                     # Check if this is the best model so far
                     eval_return = float(eval_metrics['mean_return'])
                     if eval_return > best_eval_return:
+                        prev_best = best_eval_return if best_eval_return > float('-inf') else None
                         best_eval_return = eval_return
+                        best_eval_metrics = eval_metrics  # Store the metrics for the best model
                         
-                        # Save best model
-                        if args.wandb:
-                            print(f"\n   🏆 New best eval return: {eval_return:.2f} (prev: {best_eval_return:.2f})")
-                        
-                        # Save to disk
+                        # Save best model to disk
                         best_model_path = run_dir / "best_model.pkl"
                         with open(best_model_path, 'wb') as f:
                             pickle.dump({
@@ -332,7 +331,14 @@ def main():
                                 'run_name': run_name,
                                 'eval_metrics': eval_metrics,
                                 'update_idx': update_idx,
+                                'timesteps': (update_idx + 1) * config['NUM_STEPS'] * config['NUM_ENVS'],
                             }, f)
+                        
+                        # Print update message
+                        if prev_best is not None:
+                            print(f"\n   🏆 New best eval return: {eval_return:.2f} (prev: {prev_best:.2f}) - saved to {best_model_path.name}")
+                        else:
+                            print(f"\n   🏆 Best eval return: {eval_return:.2f} - saved to {best_model_path.name}")
                 
                 # Log to wandb every update (real-time metrics)
                 # For detailed explanation of metrics, see METRICS_EXPLAINED.md
@@ -533,12 +539,39 @@ def main():
                 print(f"💾 Model saved to: {model_path}")
                 
                 if args.wandb:
-                    # Save model as wandb artifact
-                    artifact_name = f"model-{run_name}-interrupted" if interrupted else f"model-{run_name}"
+                    # Save final model as wandb artifact
+                    artifact_name = f"model-{run_name}-interrupted" if interrupted else f"model-{run_name}-final"
                     artifact = wandb.Artifact(artifact_name, type="model")
                     artifact.add_file(str(model_path))
                     wandb.log_artifact(artifact)
-                    print(f"📦 Model uploaded to WandB")
+                    print(f"📦 Final model uploaded to WandB as '{artifact_name}'")
+                    
+                    # Also upload best model if evaluation was enabled and we have one
+                    if args.eval_freq > 0 and best_eval_return > float('-inf'):
+                        best_model_path = run_dir / "best_model.pkl"
+                        if best_model_path.exists():
+                            best_artifact_name = f"model-{run_name}-best"
+                            artifact_metadata = {
+                                'eval_return': best_eval_return,
+                            }
+                            # Add more metadata if we have the metrics
+                            if best_eval_metrics is not None:
+                                artifact_metadata.update({
+                                    'eval_score': float(best_eval_metrics.get('mean_score', 0)),
+                                    'eval_length': float(best_eval_metrics.get('mean_length', 0)),
+                                    'eval_std_return': float(best_eval_metrics.get('std_return', 0)),
+                                    'eval_max_return': float(best_eval_metrics.get('max_return', 0)),
+                                    'eval_max_score': float(best_eval_metrics.get('max_score', 0)),
+                                })
+                            
+                            best_artifact = wandb.Artifact(
+                                best_artifact_name, 
+                                type="model",
+                                metadata=artifact_metadata
+                            )
+                            best_artifact.add_file(str(best_model_path))
+                            wandb.log_artifact(best_artifact)
+                            print(f"📦 Best model uploaded to WandB as '{best_artifact_name}' (eval return: {best_eval_return:.2f})")
             
             except Exception as e:
                 print(f"⚠️  Error saving model: {e}")
