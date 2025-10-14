@@ -209,6 +209,8 @@ def main():
     
     # Variables to track training state
     result = None
+    runner_state = None
+    network = None
     interrupted = False
     train_time = 0
     
@@ -360,16 +362,16 @@ def main():
             print()
         
         # Save the trained model (even if interrupted)
-        if result is not None:
+        # Check if we have a runner_state (which contains the train_state with params)
+        if runner_state is not None:
             try:
                 model_filename = "interrupted_model.pkl" if interrupted else "final_model.pkl"
                 print(f"💾 Saving model to {model_filename}...")
                 model_path = run_dir / model_filename
                 
-                # Extract train_state from result
-                # result is a dict with 'runner_state' and 'metrics'
+                # Extract train_state from runner_state
                 # runner_state is (train_state, env_state, obs, rng)
-                final_train_state = result['runner_state'][0]
+                final_train_state = runner_state[0]
                 
                 # Save params and config
                 with open(model_path, 'wb') as f:
