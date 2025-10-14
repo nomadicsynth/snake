@@ -223,11 +223,11 @@ def make_train_step(config, env, env_params):
                     
                     grad_fn = jax.value_and_grad(_loss_fn, has_aux=True)
                     rng, dropout_rng = jax.random.split(rng)
-                    total_loss, grads = grad_fn(
+                    (total_loss, (value_loss, actor_loss, entropy)), grads = grad_fn(
                         train_state.params, traj_batch, advantages, targets, dropout_rng
                     )
                     train_state = train_state.apply_gradients(grads=grads)
-                    return (train_state, rng), total_loss
+                    return (train_state, rng), (total_loss, value_loss, actor_loss, entropy)
                 
                 train_state, traj_batch, advantages, targets, rng = update_state
                 rng, _rng = jax.random.split(rng)
@@ -250,11 +250,11 @@ def make_train_step(config, env, env_params):
                     ),
                     shuffled_batch,
                 )
-                (train_state, rng), total_loss = jax.lax.scan(
+                (train_state, rng), loss_info = jax.lax.scan(
                     _update_minibatch, (train_state, rng), minibatches
                 )
                 update_state = (train_state, traj_batch, advantages, targets, rng)
-                return update_state, total_loss
+                return update_state, loss_info
             
             # Update for multiple epochs
             update_state = (train_state, traj_batch, advantages, targets, rng)
@@ -262,11 +262,28 @@ def make_train_step(config, env, env_params):
                 _update_epoch, update_state, None, config["UPDATE_EPOCHS"]
             )
             train_state = update_state[0]
-            metric = traj_batch.info
             rng = update_state[-1]
             
+            # Combine environment metrics with loss metrics
+            # loss_info is a tuple of 4 arrays: (total_loss, value_loss, actor_loss, entropy)
+            # Each has shape: [num_epochs, num_minibatches]
+            # Take mean across epochs and minibatches for logging
+            total_loss, value_loss, actor_loss, entropy = loss_info
+            
+            # Create combined metrics dict
+            # Note: traj_batch.info is a dict from LogWrapper, but we can't modify it in JIT
+            # So we return it as-is and add loss metrics in Python land
+            env_metric = traj_batch.info
+            loss_metric = {
+                'total_loss': jnp.mean(total_loss),
+                'value_loss': jnp.mean(value_loss),
+                'actor_loss': jnp.mean(actor_loss),
+                'entropy': jnp.mean(entropy),
+            }
+            
             runner_state = (train_state, env_state, last_obs, rng)
-            return runner_state, metric
+            # Return both env and loss metrics as a tuple
+            return runner_state, (env_metric, loss_metric)
         
         return jax.jit(update_step)
     
@@ -716,11 +733,11 @@ def make_train_with_callback(config, env, env_params, progress_callback):
                     
                     grad_fn = jax.value_and_grad(_loss_fn, has_aux=True)
                     rng, dropout_rng = jax.random.split(rng)
-                    total_loss, grads = grad_fn(
+                    (total_loss, (value_loss, actor_loss, entropy)), grads = grad_fn(
                         train_state.params, traj_batch, advantages, targets, dropout_rng
                     )
                     train_state = train_state.apply_gradients(grads=grads)
-                    return (train_state, rng), total_loss
+                    return (train_state, rng), (total_loss, value_loss, actor_loss, entropy)
                 
                 train_state, traj_batch, advantages, targets, rng = update_state
                 rng, _rng = jax.random.split(rng)
@@ -743,11 +760,11 @@ def make_train_with_callback(config, env, env_params, progress_callback):
                     ),
                     shuffled_batch,
                 )
-                (train_state, rng), total_loss = jax.lax.scan(
+                (train_state, rng), loss_info = jax.lax.scan(
                     _update_minibatch, (train_state, rng), minibatches
                 )
                 update_state = (train_state, traj_batch, advantages, targets, rng)
-                return update_state, total_loss
+                return update_state, loss_info
             
             # Update for multiple epochs
             update_state = (train_state, traj_batch, advantages, targets, rng)
@@ -755,24 +772,39 @@ def make_train_with_callback(config, env, env_params, progress_callback):
                 _update_epoch, update_state, None, config["UPDATE_EPOCHS"]
             )
             train_state = update_state[0]
-            metric = traj_batch.info
             rng = update_state[-1]
+            
+            # Combine environment metrics with loss metrics
+            # loss_info is a tuple of 4 arrays: (total_loss, value_loss, actor_loss, entropy)
+            # Each has shape: [num_epochs, num_minibatches]
+            # Take mean across epochs and minibatches for logging
+            total_loss, value_loss, actor_loss, entropy = loss_info
+            
+            # Return both environment info and loss metrics separately
+            env_metric = traj_batch.info  # Dict from LogWrapper
+            loss_metric = {
+                'total_loss': jnp.mean(total_loss),
+                'value_loss': jnp.mean(value_loss),
+                'actor_loss': jnp.mean(actor_loss),
+                'entropy': jnp.mean(entropy),
+            }
             
             # Call progress callback using io_callback
             # Extract only the metrics dict to pass to callback
-            def _call_callback(idx, metrics_dict):
-                progress_callback(int(idx), metrics_dict)
+            def _call_callback(idx, env_dict, loss_dict):
+                progress_callback(int(idx), {**env_dict, **loss_dict})
             
             jax.experimental.io_callback(
                 _call_callback,
                 None,  # No return value
                 update_idx,
-                metric,
+                env_metric,
+                loss_metric,
                 ordered=True  # Ensure callbacks happen in order
             )
             
             runner_state = (train_state, env_state, last_obs, rng)
-            return runner_state, metric
+            return runner_state, (env_metric, loss_metric)
         
         # Main training scan
         rng, _rng = jax.random.split(rng)

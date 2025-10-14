@@ -251,41 +251,94 @@ def main():
             for update_idx in range(config['NUM_UPDATES']):
                 runner_state, metrics = update_fn(runner_state, update_idx)
                 
-                # Transfer metrics from GPU to CPU for logging
-                metrics = jax.tree_util.tree_map(lambda x: x.block_until_ready(), metrics)
+                # metrics is now a tuple: (env_metrics, loss_metrics)
+                # Merge them into a single dict for logging
+                if isinstance(metrics, tuple) and len(metrics) == 2:
+                    env_metrics, loss_metrics = metrics
+                    # Transfer both from GPU to CPU
+                    env_metrics = jax.tree_util.tree_map(lambda x: x.block_until_ready(), env_metrics)
+                    loss_metrics = jax.tree_util.tree_map(lambda x: x.block_until_ready(), loss_metrics)
+                    # Combine into single dict
+                    metrics = {**env_metrics, **loss_metrics}
+                else:
+                    # Fallback for older format
+                    metrics = jax.tree_util.tree_map(lambda x: x.block_until_ready(), metrics)
+                
                 all_metrics.append(metrics)
+                
+                # Debug: Print metric keys on first update to verify structure
+                if update_idx == 0:
+                    print(f"   Metrics being logged: {', '.join(sorted(metrics.keys()))}")
+                    print()
                 
                 # Update progress bar
                 steps_completed = config['NUM_STEPS'] * config['NUM_ENVS']
                 pbar.update(steps_completed)
                 
-                # Log to wandb periodically
-                if args.wandb and update_idx % 10 == 0:
-                    # Check if metrics has the expected structure
-                    if 'returned_episode_returns' in metrics and 'returned_episode' in metrics:
-                        # With LogWrapper, returned_episode is a boolean mask indicating which envs completed
-                        # and returned_episode_returns contains the cumulative returns for completed episodes
-                        # Shape: [num_steps, num_envs]
-                        completed_mask = metrics['returned_episode']  # Boolean [num_steps, num_envs]
-                        episode_returns = metrics['returned_episode_returns']  # [num_steps, num_envs]
+                # Log to wandb every update (real-time metrics)
+                # For detailed explanation of metrics, see METRICS_EXPLAINED.md
+                if args.wandb:
+                    wandb_metrics = {
+                        "train/update": update_idx,
+                        "train/timesteps": (update_idx + 1) * steps_completed,
+                    }
+                    
+                    # Check if metrics has the expected structure from LogWrapper
+                    # metrics is a dict with arrays of shape [num_steps, num_envs]
+                    if isinstance(metrics, dict):
+                        # Log loss metrics if available (scalar values)
+                        if 'total_loss' in metrics:
+                            wandb_metrics["loss/total"] = float(metrics['total_loss'])
+                        if 'value_loss' in metrics:
+                            wandb_metrics["loss/value"] = float(metrics['value_loss'])
+                        if 'actor_loss' in metrics:
+                            wandb_metrics["loss/actor"] = float(metrics['actor_loss'])
+                        if 'entropy' in metrics:
+                            wandb_metrics["loss/entropy"] = float(metrics['entropy'])
                         
-                        # Get returns for completed episodes only
-                        # Filter where completed_mask is True
-                        if jnp.any(completed_mask):
-                            valid_returns = episode_returns[completed_mask]
-                            mean_return = float(jnp.mean(valid_returns))
-                            max_return = float(jnp.max(valid_returns))
-                            min_return = float(jnp.min(valid_returns))
-                            num_episodes = int(jnp.sum(completed_mask))
+                        if 'returned_episode_returns' in metrics and 'returned_episode' in metrics:
+                            # With LogWrapper, returned_episode is a boolean mask indicating which envs completed
+                            # and returned_episode_returns contains the cumulative returns for completed episodes
+                            # Shape: [num_steps, num_envs]
+                            completed_mask = metrics['returned_episode']  # Boolean [num_steps, num_envs]
+                            episode_returns = metrics['returned_episode_returns']  # [num_steps, num_envs]
                             
-                            wandb.log({
-                                "train/mean_return": mean_return,
-                                "train/max_return": max_return,
-                                "train/min_return": min_return,
-                                "train/num_episodes": num_episodes,
-                                "train/update": update_idx,
-                                "train/timesteps": (update_idx + 1) * steps_completed,
-                            })
+                            # Get returns for completed episodes only
+                            # Filter where completed_mask is True
+                            if jnp.any(completed_mask):
+                                valid_returns = episode_returns[completed_mask]
+                                mean_return = float(jnp.mean(valid_returns))
+                                max_return = float(jnp.max(valid_returns))
+                                min_return = float(jnp.min(valid_returns))
+                                num_episodes = int(jnp.sum(completed_mask))
+                                
+                                wandb_metrics.update({
+                                    "episode/mean_return": mean_return,
+                                    "episode/max_return": max_return,
+                                    "episode/min_return": min_return,
+                                    "episode/count": num_episodes,
+                                })
+                                
+                                # Update progress bar description with latest mean return
+                                pbar.set_postfix({"mean_ret": f"{mean_return:.2f}", "episodes": num_episodes})
+                        
+                        # Log episode lengths if available
+                        if 'returned_episode_lengths' in metrics:
+                            episode_lengths = metrics['returned_episode_lengths']
+                            if 'returned_episode' in metrics:
+                                completed_mask = metrics['returned_episode']
+                                if jnp.any(completed_mask):
+                                    valid_lengths = episode_lengths[completed_mask]
+                                    mean_length = float(jnp.mean(valid_lengths))
+                                    wandb_metrics["episode/mean_length"] = mean_length
+                        
+                        # Log timesteps if available
+                        if 'timestep' in metrics:
+                            # Take the last timestep value from the batch
+                            wandb_metrics["train/env_timestep"] = int(metrics['timestep'][-1, 0])
+                    
+                    # Log the metrics
+                    wandb.log(wandb_metrics)
         
         # Combine results
         result = {
