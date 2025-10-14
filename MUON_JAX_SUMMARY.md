@@ -8,7 +8,7 @@
    - `muon()`: Core Muon optimizer with Newton-Schulz orthogonalization
    - `multi_transform_with_muon()`: Multi-optimizer that applies Muon to weights and Adam to aux params
    - `chain_with_muon()`: Recommended interface with gradient clipping
-   
+
 2. **`test_muon_jax.py`** - Test suite for Muon JAX implementation
    - Tests basic optimizer functionality
    - Tests parameter labeling (2D+ → Muon, 1D → Adam)
@@ -98,6 +98,7 @@ Run the test suite:
 ```
 
 All tests passing ✓:
+
 - Basic Optimizer
 - Parameter Labeling  
 - Learning Rate Schedule
