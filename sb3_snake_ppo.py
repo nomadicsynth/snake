@@ -815,6 +815,7 @@ def train_sb3(
     seed: int,
     eval_episodes: int,
     eval_max_steps: int,
+    device: str = "auto",
     # PPO-specific parameters
     n_epochs: int = 10,
     ent_coef: float = 0.01,
@@ -997,7 +998,7 @@ def train_sb3(
         tensorboard_log=tensorboard_log,
         policy_kwargs=policy_kwargs,
         verbose=1,
-        device="auto",
+        device=device,
         seed=seed,
     )
     
@@ -1260,6 +1261,7 @@ def build_arg_parser():
     pt.add_argument("--max-steps", type=int, default=DEFAULT_MAX_STEPS, help=f"Maximum steps per episode (default: {DEFAULT_MAX_STEPS})")
     pt.add_argument("--model-path", type=str, default="sb3_snake_ppo_transformer.zip")
     pt.add_argument("--seed", type=int, default=DEFAULT_SEED, help=f"Random seed (default: {DEFAULT_SEED})")
+    pt.add_argument("--device", type=str, default="auto", choices=["auto", "cpu", "cuda"], help="Device to use for training (default: auto)")
     pt.add_argument("--curriculum", type=str, default=None, help="Path to JSON curriculum file for per-episode schedule")
 
     # Recording options
@@ -1420,6 +1422,7 @@ def main():
         max_steps=args.max_steps,
         model_path=args.model_path,
         seed=args.seed,
+        device=getattr(args, "device", "auto"),
         eval_episodes=getattr(args, "eval_episodes", 5),
         eval_max_steps=getattr(args, "eval_max_steps", DEFAULT_MAX_STEPS),
         # PPO-specific parameters
