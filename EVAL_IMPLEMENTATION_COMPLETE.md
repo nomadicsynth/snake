@@ -26,24 +26,24 @@ Successfully added comprehensive evaluation metrics to the JAX training pipeline
 
 ### Testing & Examples
 
-4. **`test_eval.py`** - Standalone test of evaluation function
-5. **`test_eval_training.sh`** - Example training run with evaluation enabled
+1. **`test_eval.py`** - Standalone test of evaluation function
+2. **`test_eval_training.sh`** - Example training run with evaluation enabled
 
 ### Documentation
 
-6. **`EVALUATION_SUMMARY.md`** - Quick overview of the feature
-7. **`docs/EVALUATION_METRICS.md`** - Detailed explanation of all metrics
-8. **`docs/SWEEP_GUIDE.md`** - Complete guide for running WandB sweeps
+1. **`EVALUATION_SUMMARY.md`** - Quick overview of the feature
+2. **`docs/EVALUATION_METRICS.md`** - Detailed explanation of all metrics
+3. **`docs/SWEEP_GUIDE.md`** - Complete guide for running WandB sweeps
 
 ### Sweep Configuration
 
-9. **`wandb_sweep_jax_ppo_eval.yaml`** - Ready-to-use sweep config
+1. **`wandb_sweep_jax_ppo_eval.yaml`** - Ready-to-use sweep config
    - Optimizes `eval/mean_return`
    - Hyperband early stopping
    - Bayesian optimization
    - Comprehensive hyperparameter search space
 
-10. **Updated `README.md`** - Added section on evaluation and sweeps
+2. **Updated `README.md`** - Added section on evaluation and sweeps
 
 ## Key Features
 
@@ -57,6 +57,7 @@ Successfully added comprehensive evaluation metrics to the JAX training pipeline
 ## Metrics Logged
 
 ### Evaluation Metrics (`eval/*`)
+
 - `eval/mean_return` - **Primary optimization metric**
 - `eval/std_return` - Performance consistency
 - `eval/mean_score` - Average apples eaten (interpretable)
@@ -67,6 +68,7 @@ Successfully added comprehensive evaluation metrics to the JAX training pipeline
 - `eval/best_return` - Best mean return seen during training
 
 ### Training Metrics (existing, `episode/*`)
+
 - `episode/mean_return` - Training episode returns (with exploration)
 - `episode/mean_length` - Training episode lengths
 - Plus all loss metrics: `loss/total`, `loss/value`, `loss/actor`, `loss/entropy`
@@ -74,6 +76,7 @@ Successfully added comprehensive evaluation metrics to the JAX training pipeline
 ## Usage Examples
 
 ### Basic Training with Evaluation
+
 ```bash
 python train_snake_purejaxrl.py \
     --wandb \
@@ -83,6 +86,7 @@ python train_snake_purejaxrl.py \
 ```
 
 ### Run a Hyperparameter Sweep
+
 ```bash
 # Initialize sweep
 wandb sweep wandb_sweep_jax_ppo_eval.yaml
@@ -92,6 +96,7 @@ wandb agent your-entity/project/sweep-id
 ```
 
 ### Disable Evaluation (Faster Training)
+
 ```bash
 python train_snake_purejaxrl.py \
     --eval-freq 0 \
@@ -99,6 +104,7 @@ python train_snake_purejaxrl.py \
 ```
 
 ### Test Evaluation Function
+
 ```bash
 source .venv/bin/activate
 python test_eval.py
@@ -112,6 +118,7 @@ python test_eval.py
 - **Throughput**: Minimal impact with default settings (eval every 50 updates)
 
 ### Example Timings (10x10 Snake, RTX 4090)
+
 - Training FPS: ~185,000 (no eval) → ~180,000 (with eval @ freq=50)
 - Evaluation: ~128 episodes in ~0.2s (after compilation)
 - Total overhead: ~2-3% with default settings
@@ -119,12 +126,14 @@ python test_eval.py
 ## Why This Matters
 
 ### Before (Training Metrics Only)
+
 ❌ Noisy due to exploration (ε-greedy or stochastic sampling)
 ❌ High variance across runs
 ❌ Hard to compare hyperparameters reliably
 ❌ No way to know "true" performance
 
 ### After (With Evaluation)
+
 ✅ Stable, greedy policy metrics
 ✅ Low variance across runs
 ✅ Reliable hyperparameter comparison
@@ -134,17 +143,20 @@ python test_eval.py
 ## Next Steps
 
 1. **Test the evaluation**:
+
    ```bash
    source .venv/bin/activate
    python test_eval.py
    ```
 
 2. **Run a short training test**:
+
    ```bash
    ./test_eval_training.sh
    ```
 
 3. **Set up a sweep**:
+
    ```bash
    wandb sweep wandb_sweep_jax_ppo_eval.yaml
    ```
@@ -156,7 +168,7 @@ python test_eval.py
 
 ## Files Modified/Added
 
-```
+```text
 Modified:
   train_snake_purejaxrl.py          - Added eval integration
   train_snake_purejaxrl_impl.py     - Added make_evaluate_fn()
@@ -181,4 +193,4 @@ Added:
 
 ---
 
-**Ready to run sweeps and find optimal hyperparameters! 🎯🚀**
+## Ready to run sweeps and find optimal hyperparameters! 🎯🚀

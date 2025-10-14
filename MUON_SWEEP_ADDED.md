@@ -9,6 +9,7 @@ Successfully added Muon optimizer as an option in the WandB sweep configuration,
 ### 1. Updated `train_snake_purejaxrl.py`
 
 **Added boolean argument parser:**
+
 ```python
 def str2bool(v):
     """Convert string to boolean for argparse"""
@@ -23,6 +24,7 @@ def str2bool(v):
 ```
 
 **Updated `--use-muon` argument:**
+
 ```python
 # Before
 parser.add_argument("--use-muon", "--use_muon", action="store_true", default=False, ...)
@@ -36,6 +38,7 @@ This allows the sweep to pass `--use_muon=true` or `--use_muon=false` as values 
 ### 2. Updated `wandb_sweep_jax_ppo_eval.yaml`
 
 **Added Muon parameters:**
+
 ```yaml
 parameters:
   # Optimizer selection
@@ -70,16 +73,19 @@ parameters:
 ### Optimizer Selection
 
 The sweep will test both optimizers:
+
 - **`use_muon=false`**: Uses Adam optimizer with `lr` parameter
 - **`use_muon=true`**: Uses Muon optimizer with `muon_lr`, `aux_adam_lr`, and `muon_momentum`
 
 ### Parameter Behavior
 
 When **Adam** is selected (`use_muon=false`):
+
 - Uses `lr` for learning rate
 - Ignores `muon_lr`, `aux_adam_lr`, `muon_momentum`
 
 When **Muon** is selected (`use_muon=true`):
+
 - Uses `muon_lr` for weight matrix learning rate (typically higher, 0.001-0.1)
 - Uses `aux_adam_lr` for auxiliary parameters (biases, norms, etc.)
 - Uses `muon_momentum` for momentum value
@@ -88,6 +94,7 @@ When **Muon** is selected (`use_muon=true`):
 ### Expected Performance
 
 Based on previous research:
+
 - **Muon**: Often faster convergence with higher learning rates
 - **Adam**: More stable, well-tested baseline
 - The sweep will determine which works better for Snake!
@@ -125,6 +132,7 @@ The sweep will now automatically test both Adam and Muon optimizers with differe
 ## Expected Outcomes
 
 The sweep will reveal:
+
 1. **Which optimizer is better for Snake** (Adam vs Muon)
 2. **Optimal learning rates** for each optimizer
 3. **Best hyperparameter combinations** for each optimizer
@@ -133,9 +141,11 @@ The sweep will reveal:
 ## Hyperparameter Ranges
 
 ### Adam (when `use_muon=false`)
+
 - `lr`: 1e-5 to 1e-3 (log uniform)
 
 ### Muon (when `use_muon=true`)
+
 - `muon_lr`: 0.001 to 0.1 (log uniform) - for weight matrices
 - `aux_adam_lr`: 1e-5 to 1e-3 (log uniform) - for auxiliary params
 - `muon_momentum`: 0.90 to 0.99 (uniform)
@@ -150,4 +160,4 @@ Note: Muon typically uses higher learning rates (0.01-0.05) than Adam.
 
 ---
 
-**Ready to discover if Muon beats Adam for Snake RL! 🚀⚡**
+## Ready to discover if Muon beats Adam for Snake RL! 🚀⚡
