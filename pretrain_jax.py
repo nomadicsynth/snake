@@ -147,6 +147,7 @@ def get_learning_rate(state, lr_schedule):
 
 def main():
     parser = argparse.ArgumentParser(description="Pretrain JAX Transformer on Snake dataset")
+    parser.add_argument("--bf16", action="store_true", help="Train using bfloat16 precision")
     parser.add_argument("--dataset", type=str, required=True, help="Path to dataset pickle file")
     parser.add_argument("--epochs", type=int, default=20, help="Number of training epochs")
     parser.add_argument("--batch-size", "--batch_size", type=int, default=256, help="Batch size")
@@ -196,6 +197,9 @@ def main():
 
     # Load dataset
     states, actions = load_dataset(args.dataset)
+    if args.bf16:
+        print("Casting states to bfloat16 for training...")
+        states = states.astype(jnp.bfloat16)
 
     # Split into train/val
     n_samples = len(states)
@@ -231,7 +235,14 @@ def main():
     rng, init_rng, dropout_rng = jax.random.split(rng, 3)
 
     dummy_input = states[0:1]  # Single sample for initialization
+    if args.bf16:
+        dummy_input = dummy_input.astype(jnp.bfloat16)
     params = network.init({"params": init_rng, "dropout": dropout_rng}, dummy_input, training=False)
+    if args.bf16:
+        # Cast all parameters to bfloat16
+        def cast_tree(tree):
+            return jax.tree_map(lambda x: x.astype(jnp.bfloat16) if hasattr(x, 'dtype') and x.dtype == jnp.float32 else x, tree)
+        params = cast_tree(params)
 
     print(f"Model initialized:")
     print(f"  d_model: {args.d_model}")
