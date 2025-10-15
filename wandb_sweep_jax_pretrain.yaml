@@ -38,12 +38,12 @@ parameters:
   # Muon optimizer parameters (only used when optimizer=muon)
   muon_lr:
     distribution: log_uniform_values
-    min: 0.001
-    max: 0.1
+    min: 0.0001
+    max: 0.002
   
   muon_aux_lr:
     distribution: log_uniform_values
-    min: 0.00001
+    min: 0.0001
     max: 0.001
   
   muon_momentum:
@@ -56,35 +56,40 @@ parameters:
   
   # Learning rate schedule
   lr_schedule:
-    values: [constant, cosine, linear]
+    # values: [constant, cosine, linear]
+    values: [cosine, linear]
   
   warmup_epochs:
-    values: [0, 5, 10]
+    values: [5, 10]
   
   min_lr:
     distribution: log_uniform_values
-    min: 0.00000001
+    min: 0.0000001
     max: 0.000001
   
   # Network architecture
-  # d_model:
-  #   values: [32, 64, 128]
+  d_model:
+    values: [64, 128, 256]
   
-  # num_layers:
-  #   values: [1, 2, 3]
+  num_layers:
+    values: [2, 3, 4]
   
-  # num_heads:
-  #   values: [2, 4, 8]
+  num_heads:
+    values: [2, 4, 8]
   
   dropout:
     distribution: uniform
-    min: 0.0
-    max: 0.3
+    min: 0.01
+    max: 0.2
   
   # CNN encoder options
   cnn_mode:
     # values: [replace, append]
     value: append
+
+  # Not sure if this works. Comment for now and test.
+  # cnn_features:
+  #   values: [[32, 64], [32, 64, 128]]
   
   # Dataset
   dataset:
@@ -92,14 +97,11 @@ parameters:
   
   # Misc settings
   seed:
-    value: 42
+    values: [42, 69, 420, 1337]
   
   save_dir:
     value: pretrain_models/sweep
   
-  wandb_project:
-    value: snake-pretrain-jax
-
 # Command to run - include boolean flags directly in command
 command:
   - ${env}
