@@ -90,6 +90,11 @@ def parse_args():
     parser.add_argument("--num-heads", "--num_heads", type=int, default=4, help="Number of attention heads")
     parser.add_argument("--dropout", type=float, default=0.1, help="Dropout rate")
     
+    # CNN args
+    parser.add_argument("--use-cnn", "--use_cnn", type=str2bool, nargs='?', const=True, default=False, help="Use CNN encoder before transformer")
+    parser.add_argument("--cnn-features", "--cnn_features", type=int, nargs='+', default=[32, 64], help="CNN feature dimensions per layer")
+    parser.add_argument("--cnn-mode", "--cnn_mode", type=str, default='replace', choices=['replace', 'append'], help="CNN mode: 'replace' or 'append'")
+    
     # Logging args
     parser.add_argument("--wandb", action="store_true", help="Use Weights & Biases logging")
     parser.add_argument("--wandb-project", "--wandb_project", type=str, default="snake-jax-ppo", help="WandB project name")
@@ -145,6 +150,10 @@ def main():
         "NUM_LAYERS": args.num_layers,
         "NUM_HEADS": args.num_heads,
         "DROPOUT": args.dropout,
+        # CNN encoder
+        "USE_CNN": args.use_cnn,
+        "CNN_FEATURES": tuple(args.cnn_features),
+        "CNN_MODE": args.cnn_mode,
         # Muon optimizer
         "USE_MUON": args.use_muon,
         "MUON_LR": args.muon_lr,
@@ -203,6 +212,8 @@ def main():
         print(f"  Optimizer: Adam")
         print(f"  Learning rate: {config['LR']:.2e}")
     print(f"  Network: d_model={args.d_model}, layers={args.num_layers}, heads={args.num_heads}")
+    if config['USE_CNN']:
+        print(f"  CNN: enabled, features={config['CNN_FEATURES']}, mode={config['CNN_MODE']}")
     if args.eval_freq > 0:
         print(f"  Evaluation: every {args.eval_freq} updates, {args.eval_episodes} episodes")
     print()

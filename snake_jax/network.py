@@ -89,17 +89,47 @@ class TransformerBlock(nn.Module):
         return x
 
 
+class CNNEncoder(nn.Module):
+    """Convolutional encoder for spatial features"""
+    features: Sequence[int] = (32, 64)
+    kernel_sizes: Sequence[int] = (3, 3)
+    
+    @nn.compact
+    def __call__(self, x, training: bool = False):
+        """
+        Args:
+            x: (batch, height, width, channels) - grid observation
+        
+        Returns:
+            features: (batch, height, width, features[-1]) - extracted features
+        """
+        for i, (feat, kernel) in enumerate(zip(self.features, self.kernel_sizes)):
+            x = nn.Conv(
+                features=feat,
+                kernel_size=(kernel, kernel),
+                padding='SAME',
+                name=f'conv_{i}'
+            )(x)
+            x = nn.gelu(x)
+        
+        return x
+
+
 class TransformerPolicy(nn.Module):
     """
     Transformer-based Actor-Critic policy for Snake
     
     Processes grid observations with transformer encoder.
+    Optionally uses CNN for feature extraction.
     """
     d_model: int = 64
     num_layers: int = 2
     num_heads: int = 4
     num_actions: int = 4
     dropout_rate: float = 0.1
+    use_cnn: bool = False
+    cnn_features: Sequence[int] = (32, 64)
+    cnn_mode: str = 'replace'  # 'replace' or 'append'
     
     @nn.compact
     def __call__(self, x, training: bool = False):
@@ -114,8 +144,28 @@ class TransformerPolicy(nn.Module):
         batch_size, height, width, channels = x.shape
         seq_len = height * width
         
+        # Optional CNN processing
+        if self.use_cnn:
+            cnn = CNNEncoder(
+                features=self.cnn_features,
+                kernel_sizes=(3,) * len(self.cnn_features),
+                name='cnn_encoder'
+            )
+            cnn_features = cnn(x, training=training)  # (batch, H, W, cnn_features[-1])
+            
+            if self.cnn_mode == 'replace':
+                # Use CNN features as the only input to transformer
+                x = cnn_features
+                channels = self.cnn_features[-1]
+            elif self.cnn_mode == 'append':
+                # Append CNN features to original input
+                x = jnp.concatenate([x, cnn_features], axis=-1)  # (batch, H, W, 3 + cnn_features[-1])
+                channels = channels + self.cnn_features[-1]
+            else:
+                raise ValueError(f"Invalid cnn_mode: {self.cnn_mode}. Must be 'replace' or 'append'")
+        
         # Flatten spatial dims to tokens
-        x = x.reshape(batch_size, seq_len, channels)  # (batch, H*W, 3)
+        x = x.reshape(batch_size, seq_len, channels)  # (batch, H*W, channels)
         
         # Project input to d_model
         x = nn.Dense(self.d_model, name='input_proj')(x)

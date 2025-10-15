@@ -177,7 +177,10 @@ def make_train_step(config, env, env_params):
             num_layers=config.get("NUM_LAYERS", 2),
             num_heads=config.get("NUM_HEADS", 4),
             num_actions=env.action_space(env_params).n,
-            dropout_rate=config.get("DROPOUT", 0.1)
+            dropout_rate=config.get("DROPOUT", 0.1),
+            use_cnn=config.get("USE_CNN", False),
+            cnn_features=config.get("CNN_FEATURES", (32, 64)),
+            cnn_mode=config.get("CNN_MODE", "replace"),
         )
         
         rng, _rng, dropout_rng = jax.random.split(rng, 3)
@@ -447,7 +450,10 @@ def make_train_custom(config, env, env_params):
             num_layers=config.get("NUM_LAYERS", 2),
             num_heads=config.get("NUM_HEADS", 4),
             num_actions=env.action_space(env_params).n,
-            dropout_rate=config.get("DROPOUT", 0.1)
+            dropout_rate=config.get("DROPOUT", 0.1),
+            use_cnn=config.get("USE_CNN", False),
+            cnn_features=config.get("CNN_FEATURES", (32, 64)),
+            cnn_mode=config.get("CNN_MODE", "replace"),
         )
         
         rng, _rng, dropout_rng = jax.random.split(rng, 3)
@@ -720,7 +726,10 @@ def make_train_with_callback(config, env, env_params, progress_callback):
             num_layers=config.get("NUM_LAYERS", 2),
             num_heads=config.get("NUM_HEADS", 4),
             num_actions=env.action_space(env_params).n,
-            dropout_rate=config.get("DROPOUT", 0.1)
+            dropout_rate=config.get("DROPOUT", 0.1),
+            use_cnn=config.get("USE_CNN", False),
+            cnn_features=config.get("CNN_FEATURES", (32, 64)),
+            cnn_mode=config.get("CNN_MODE", "replace"),
         )
         
         rng, _rng, dropout_rng = jax.random.split(rng, 3)
