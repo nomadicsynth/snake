@@ -187,6 +187,25 @@ def make_train_step(config, env, env_params):
         init_obs = jnp.zeros(env.observation_space(env_params).shape)
         network_params = network.init({'params': _rng, 'dropout': dropout_rng}, init_obs[None], training=False)
         
+        # Load pretrained weights if provided
+        if config.get("PRETRAINED_MODEL") is not None:
+            import pickle
+            print(f"   Loading pretrained model from {config['PRETRAINED_MODEL']}...")
+            with open(config["PRETRAINED_MODEL"], 'rb') as f:
+                pretrained_data = pickle.load(f)
+            
+            # Extract params - handle both old format (dict) and new format (TrainState)
+            if isinstance(pretrained_data, dict) and 'params' in pretrained_data:
+                pretrained_params = pretrained_data['params']
+            elif hasattr(pretrained_data, 'params'):
+                pretrained_params = pretrained_data.params
+            else:
+                pretrained_params = pretrained_data
+            
+            # Use pretrained params instead of random init
+            network_params = pretrained_params
+            print("   ✓ Pretrained model loaded successfully!")
+        
         # INIT OPTIMIZER
         use_muon = config.get("USE_MUON", False) and _MUON_AVAILABLE
         

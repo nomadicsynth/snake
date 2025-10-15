@@ -224,37 +224,34 @@ class SnakeEnv:
     @partial(jax.jit, static_argnums=(0,))
     def _get_observation(self, state: SnakeState) -> jnp.ndarray:
         """
-        Generate observation from state
+        Generate observation from state using RGB encoding.
         
         Returns:
-            Grid (H, W, 3) where channels are:
-            - 0: Snake body
-            - 1: Food
-            - 2: Empty space
+            Grid (H, W, 3) where channels are RGB:
+            - Empty cells: (0, 0, 0) - Black
+            - Snake: (0, 1, 0) - Green
+            - Food: (1, 0, 0) - Red
+            
+            Values are in [0, 1] range (normalized).
         """
         config = self.config
         
-        # Initialize empty grid
+        # Initialize empty grid (all black)
         obs = jnp.zeros((config.height, config.width, 3), dtype=jnp.float32)
         
-        # Mark empty cells (channel 2)
-        obs = obs.at[:, :, 2].set(1.0)
-        
-        # Mark food position (channel 1)
+        # Mark food position in red (R=1, G=0, B=0)
         food_x, food_y = state.food_pos
-        obs = obs.at[food_y, food_x, 1].set(1.0)
-        obs = obs.at[food_y, food_x, 2].set(0.0)
+        obs = obs.at[food_y, food_x, 0].set(1.0)  # Red channel
         
-        # Mark snake body (channel 0)
+        # Mark snake body in green (R=0, G=1, B=0)
         # We need to mark all valid snake positions
         def mark_snake_segment(i, obs):
             # Only mark if this is a valid segment
             segment = state.snake_body[i]
             x, y = segment
             
-            # Mark this segment
-            obs_new = obs.at[y, x, 0].set(1.0)
-            obs_new = obs_new.at[y, x, 2].set(0.0)
+            # Mark this segment as green
+            obs_new = obs.at[y, x, 1].set(1.0)  # Green channel
             
             # Only apply if i < snake_length
             return jnp.where(i < state.snake_length, obs_new, obs)

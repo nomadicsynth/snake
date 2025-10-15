@@ -107,6 +107,9 @@ def parse_args():
     parser.add_argument("--eval-freq", "--eval_freq", type=int, default=50, help="Evaluate every N updates (0 to disable)")
     parser.add_argument("--eval-episodes", "--eval_episodes", type=int, default=128, help="Number of episodes per evaluation")
     
+    # Pretrained model args
+    parser.add_argument("--pretrained-model", "--pretrained_model", type=str, default=None, help="Path to pretrained model to load")
+    
     # Misc args
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     
@@ -160,6 +163,8 @@ def main():
         "AUX_ADAM_LR": args.aux_adam_lr if args.aux_adam_lr is not None else args.lr,
         "MUON_MOMENTUM": args.muon_momentum,
         "MUON_NESTEROV": args.muon_nesterov,
+        # Pretrained model
+        "PRETRAINED_MODEL": args.pretrained_model,
     }
 
     # Derived values
@@ -214,6 +219,8 @@ def main():
     print(f"  Network: d_model={args.d_model}, layers={args.num_layers}, heads={args.num_heads}")
     if config['USE_CNN']:
         print(f"  CNN: enabled, features={config['CNN_FEATURES']}, mode={config['CNN_MODE']}")
+    if args.pretrained_model:
+        print(f"  Pretrained model: {args.pretrained_model}")
     if args.eval_freq > 0:
         print(f"  Evaluation: every {args.eval_freq} updates, {args.eval_episodes} episodes")
     print()

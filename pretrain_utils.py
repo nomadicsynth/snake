@@ -272,24 +272,26 @@ def state_from_positions(
     height: int
 ) -> np.ndarray:
     """
-    Convert game positions to state array.
-    Returns array of shape (height, width, 3) with channels:
-    - Channel 0: Snake head (1.0 at head position)
-    - Channel 1: Snake body (1.0 at body positions)
-    - Channel 2: Food (1.0 at food position)
+    Convert game positions to state array using RGB encoding.
+    Returns array of shape (height, width, 3) with RGB channels:
+    - Empty cells: (0, 0, 0) - Black
+    - Snake: (0, 255, 0) - Green
+    - Food: (255, 0, 0) - Red
+    
+    Values are normalized to [0, 1] range for neural network input.
     """
     state = np.zeros((height, width, 3), dtype=np.float32)
     
-    # Snake head
-    head = snake_positions[0]
-    state[head[0], head[1], 0] = 1.0
+    # Mark all snake positions in green
+    for pos in snake_positions:
+        state[pos[0], pos[1], 0] = 0.0   # R
+        state[pos[0], pos[1], 1] = 1.0   # G
+        state[pos[0], pos[1], 2] = 0.0   # B
     
-    # Snake body (excluding head)
-    for pos in snake_positions[1:]:
-        state[pos[0], pos[1], 1] = 1.0
-    
-    # Food
-    state[food_pos[0], food_pos[1], 2] = 1.0
+    # Food in red
+    state[food_pos[0], food_pos[1], 0] = 1.0   # R
+    state[food_pos[0], food_pos[1], 1] = 0.0   # G
+    state[food_pos[0], food_pos[1], 2] = 0.0   # B
     
     return state
 
