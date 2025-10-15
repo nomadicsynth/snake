@@ -158,42 +158,42 @@ def main():
     parser = argparse.ArgumentParser(description="Pretrain JAX Transformer on Snake dataset")
     parser.add_argument("--dataset", type=str, required=True, help="Path to dataset pickle file")
     parser.add_argument("--epochs", type=int, default=20, help="Number of training epochs")
-    parser.add_argument("--batch-size", type=int, default=256, help="Batch size")
+    parser.add_argument("--batch-size", "--batch_size", type=int, default=256, help="Batch size")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
-    parser.add_argument("--d-model", type=int, default=64, help="Transformer dimension")
-    parser.add_argument("--num-layers", type=int, default=2, help="Number of transformer layers")
-    parser.add_argument("--num-heads", type=int, default=4, help="Number of attention heads")
+    parser.add_argument("--d-model", "--d_model", type=int, default=64, help="Transformer dimension")
+    parser.add_argument("--num-layers", "--num_layers", type=int, default=2, help="Number of transformer layers")
+    parser.add_argument("--num-heads", "--num_heads", type=int, default=4, help="Number of attention heads")
     parser.add_argument("--dropout", type=float, default=0.1, help="Dropout rate")
-    parser.add_argument("--use-cnn", action="store_true", help="Use CNN encoder")
-    parser.add_argument("--cnn-mode", type=str, default="replace", choices=["replace", "append"])
-    parser.add_argument("--val-split", type=float, default=0.1, help="Validation split fraction")
+    parser.add_argument("--use-cnn", "--use_cnn", action="store_true", help="Use CNN encoder")
+    parser.add_argument("--cnn-mode", "--cnn_mode", type=str, default="replace", choices=["replace", "append"])
+    parser.add_argument("--val-split", "--val_split", type=float, default=0.1, help="Validation split fraction")
     parser.add_argument("--wandb", action="store_true", help="Use wandb logging")
-    parser.add_argument("--wandb-project", type=str, default="snake-pretrain-jax")
-    parser.add_argument("--run-name", type=str, default=None)
-    parser.add_argument("--save-dir", type=str, default="pretrain_models")
+    parser.add_argument("--wandb-project", "--wandb_project", type=str, default="snake-pretrain-jax")
+    parser.add_argument("--run-name", "--run_name", type=str, default=None)
+    parser.add_argument("--save-dir", "--save_dir", type=str, default="pretrain_models")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     
     # Optimizer options
     parser.add_argument("--optimizer", type=str, default="adam", choices=["adam", "muon"],
                         help="Optimizer to use (default: adam)")
-    parser.add_argument("--muon-lr", type=float, default=None,
+    parser.add_argument("--muon-lr", "--muon_lr", type=float, default=None,
                         help="Learning rate for Muon optimizer on weight matrices (uses --lr if not specified)")
-    parser.add_argument("--muon-aux-lr", type=float, default=None,
+    parser.add_argument("--muon-aux-lr", "--muon_aux_lr", type=float, default=None,
                         help="Learning rate for Adam on auxiliary params when using Muon (uses --lr if not specified)")
-    parser.add_argument("--muon-momentum", type=float, default=0.95,
+    parser.add_argument("--muon-momentum", "--muon_momentum", type=float, default=0.95,
                         help="Momentum for Muon optimizer (default: 0.95)")
-    parser.add_argument("--muon-nesterov", action="store_true", default=True,
+    parser.add_argument("--muon-nesterov", "--muon_nesterov", action="store_true", default=True,
                         help="Use Nesterov momentum for Muon (default: True)")
-    parser.add_argument("--max-grad-norm", type=float, default=1.0,
+    parser.add_argument("--max-grad-norm", "--max_grad_norm", type=float, default=1.0,
                         help="Maximum gradient norm for clipping (default: 1.0)")
     
     # Learning rate schedule options
-    parser.add_argument("--lr-schedule", type=str, default="constant", 
+    parser.add_argument("--lr-schedule", "--lr_schedule", type=str, default="constant", 
                         choices=["constant", "cosine", "linear"],
                         help="Learning rate schedule (default: constant)")
-    parser.add_argument("--warmup-epochs", type=int, default=0,
+    parser.add_argument("--warmup-epochs", "--warmup_epochs", type=int, default=0,
                         help="Number of warmup epochs for LR schedule (default: 0)")
-    parser.add_argument("--min-lr", type=float, default=0.0,
+    parser.add_argument("--min-lr", "--min_lr", type=float, default=0.0,
                         help="Minimum learning rate for cosine schedule (default: 0.0)")
     
     args = parser.parse_args()
