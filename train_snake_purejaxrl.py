@@ -109,6 +109,7 @@ def parse_args():
     
     # Pretrained model args
     parser.add_argument("--pretrained-model", "--pretrained_model", type=str, default=None, help="Path to pretrained model to load")
+    parser.add_argument("--kl-coef", "--kl_coef", type=float, default=0.0, help="KL divergence coefficient to keep policy close to pretrained model")
     
     # Misc args
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
@@ -165,6 +166,7 @@ def main():
         "MUON_NESTEROV": args.muon_nesterov,
         # Pretrained model
         "PRETRAINED_MODEL": args.pretrained_model,
+        "KL_COEF": args.kl_coef,
     }
 
     # Derived values
@@ -267,11 +269,11 @@ def main():
 
         # Initialize training state
         print("   Initializing network and environment...")
-        network, train_state, env_state, obsv, rng = init_fn(rng)
+        network, train_state, env_state, obsv, rng, pretrained_params = init_fn(rng)
         runner_state = (train_state, env_state, obsv, rng)
 
         # Create JIT-compiled update function
-        update_fn = make_update_fn(network)
+        update_fn = make_update_fn(network, pretrained_params)
 
         # Create JIT-compiled evaluation function if needed
         if args.eval_freq > 0:

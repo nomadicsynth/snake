@@ -188,6 +188,7 @@ def make_train_step(config, env, env_params):
         network_params = network.init({'params': _rng, 'dropout': dropout_rng}, init_obs[None], training=False)
         
         # Load pretrained weights if provided
+        pretrained_params = None  # Will store reference params for KL penalty
         if config.get("PRETRAINED_MODEL") is not None:
             import pickle
             print(f"   Loading pretrained model from {config['PRETRAINED_MODEL']}...")
@@ -202,9 +203,16 @@ def make_train_step(config, env, env_params):
             else:
                 pretrained_params = pretrained_data
             
-            # Use pretrained params instead of random init
+            # Use pretrained params as initialization
             network_params = pretrained_params
             print("   ✓ Pretrained model loaded successfully!")
+            
+            # If using KL penalty, keep a frozen copy of pretrained params
+            if config.get("KL_COEF", 0.0) > 0:
+                pretrained_params = jax.tree.map(lambda x: jax.lax.stop_gradient(x), pretrained_params)
+                print(f"   ✓ KL penalty enabled (coef={config['KL_COEF']}) - frozen reference params stored")
+            else:
+                pretrained_params = None  # Don't need reference if no KL penalty
         
         # INIT OPTIMIZER
         use_muon = config.get("USE_MUON", False) and _MUON_AVAILABLE
@@ -244,9 +252,9 @@ def make_train_step(config, env, env_params):
         obsv, env_state = jax.vmap(env.reset, in_axes=(0, None))(reset_rng, env_params)
         
         rng, _rng = jax.random.split(rng)
-        return network, train_state, env_state, obsv, _rng
+        return network, train_state, env_state, obsv, _rng, pretrained_params
     
-    def make_update_fn(network):
+    def make_update_fn(network, pretrained_params=None):
         """Create the update function"""
         
         def update_step(runner_state, update_idx):
@@ -349,20 +357,31 @@ def make_train_step(config, env, env_params):
                         loss_actor = loss_actor.mean()
                         entropy = pi.entropy().mean()
                         
+                        # CALCULATE KL DIVERGENCE (if pretrained params provided)
+                        kl_div = jnp.array(0.0)
+                        if pretrained_params is not None and config.get("KL_COEF", 0.0) > 0:
+                            # Get pretrained policy distribution
+                            pretrained_logits, _ = network.apply(pretrained_params, traj_batch.obs, training=False, rngs={'dropout': dropout_rng})
+                            pretrained_pi = distrax.Categorical(logits=pretrained_logits)
+                            
+                            # KL(pretrained || current) - penalizes deviation from pretrained policy
+                            kl_div = pretrained_pi.kl_divergence(pi).mean()
+                        
                         total_loss = (
                             loss_actor
                             + config["VF_COEF"] * value_loss
                             - config["ENT_COEF"] * entropy
+                            + config.get("KL_COEF", 0.0) * kl_div
                         )
-                        return total_loss, (value_loss, loss_actor, entropy)
+                        return total_loss, (value_loss, loss_actor, entropy, kl_div)
                     
                     grad_fn = jax.value_and_grad(_loss_fn, has_aux=True)
                     rng, dropout_rng = jax.random.split(rng)
-                    (total_loss, (value_loss, actor_loss, entropy)), grads = grad_fn(
+                    (total_loss, (value_loss, actor_loss, entropy, kl_div)), grads = grad_fn(
                         train_state.params, traj_batch, advantages, targets, dropout_rng
                     )
                     train_state = train_state.apply_gradients(grads=grads)
-                    return (train_state, rng), (total_loss, value_loss, actor_loss, entropy)
+                    return (train_state, rng), (total_loss, value_loss, actor_loss, entropy, kl_div)
                 
                 train_state, traj_batch, advantages, targets, rng = update_state
                 rng, _rng = jax.random.split(rng)
@@ -400,10 +419,10 @@ def make_train_step(config, env, env_params):
             rng = update_state[-1]
             
             # Combine environment metrics with loss metrics
-            # loss_info is a tuple of 4 arrays: (total_loss, value_loss, actor_loss, entropy)
+            # loss_info is a tuple of 5 arrays: (total_loss, value_loss, actor_loss, entropy, kl_div)
             # Each has shape: [num_epochs, num_minibatches]
             # Take mean across epochs and minibatches for logging
-            total_loss, value_loss, actor_loss, entropy = loss_info
+            total_loss, value_loss, actor_loss, entropy, kl_div = loss_info
             
             # Calculate current learning rate
             if config.get("USE_MUON", False):
@@ -424,6 +443,7 @@ def make_train_step(config, env, env_params):
                 'value_loss': jnp.mean(value_loss),
                 'actor_loss': jnp.mean(actor_loss),
                 'entropy': jnp.mean(entropy),
+                'kl_div': jnp.mean(kl_div),
                 'learning_rate': current_lr,
             }
             
