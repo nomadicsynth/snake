@@ -4,7 +4,7 @@
 program: pretrain_jax.py
 method: bayes  # Bayesian optimization for efficient search
 metric:
-  name: val/acc  # Primary metric: validation accuracy
+  name: val/accuracy  # Primary metric: validation accuracy
   goal: maximize
 
 # Early stopping based on validation performance
