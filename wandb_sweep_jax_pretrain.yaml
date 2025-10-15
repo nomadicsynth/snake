@@ -1,0 +1,110 @@
+# WandB Sweep Configuration for Snake JAX Supervised Pretraining
+# This sweep optimizes hyperparameters for pretraining the transformer
+
+program: pretrain_jax.py
+method: bayes  # Bayesian optimization for efficient search
+metric:
+  name: val/acc  # Primary metric: validation accuracy
+  goal: maximize
+
+# Early stopping based on validation performance
+early_terminate:
+  type: hyperband
+  min_iter: 10  # Run at least 10 epochs
+  eta: 2
+  s: 3
+
+parameters:
+  # Training settings
+  epochs:
+    value: 30
+  
+  batch_size:
+    value: 256
+  
+  val_split:
+    value: 0.1
+  
+  # Base learning rate (for Adam or as base for Muon aux)
+  # lr:
+  #   distribution: log_uniform_values
+  #   min: 0.00001
+  #   max: 0.001
+  
+  # Optimizer selection
+  optimizer:
+    value: muon
+  
+  # Muon optimizer parameters (only used when optimizer=muon)
+  muon_lr:
+    distribution: log_uniform_values
+    min: 0.001
+    max: 0.1
+  
+  muon_aux_lr:
+    distribution: log_uniform_values
+    min: 0.00001
+    max: 0.001
+  
+  muon_momentum:
+    distribution: uniform
+    min: 0.90
+    max: 0.99
+  
+  max_grad_norm:
+    value: 1.0
+  
+  # Learning rate schedule
+  lr_schedule:
+    values: [constant, cosine, linear]
+  
+  warmup_epochs:
+    values: [0, 5, 10]
+  
+  min_lr:
+    distribution: log_uniform_values
+    min: 0.00000001
+    max: 0.000001
+  
+  # Network architecture
+  # d_model:
+  #   values: [32, 64, 128]
+  
+  # num_layers:
+  #   values: [1, 2, 3]
+  
+  # num_heads:
+  #   values: [2, 4, 8]
+  
+  dropout:
+    distribution: uniform
+    min: 0.0
+    max: 0.3
+  
+  # CNN encoder options
+  cnn_mode:
+    # values: [replace, append]
+    value: append
+  
+  # Dataset
+  dataset:
+    value: snake_pretrain_dataset_mixed.pkl
+  
+  # Misc settings
+  seed:
+    value: 42
+  
+  save_dir:
+    value: pretrain_models/sweep
+  
+  wandb_project:
+    value: snake-pretrain-jax
+
+# Command to run - include boolean flags directly in command
+command:
+  - ${env}
+  - python
+  - ${program}
+  - --wandb
+  - --use-cnn
+  - ${args}
