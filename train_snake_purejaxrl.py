@@ -60,7 +60,7 @@ def parse_args():
     parser.add_argument("--max-steps", "--max_steps", type=int, default=500, help="Max steps per episode")
     parser.add_argument("--apple-reward", "--apple_reward", type=float, default=10.0, help="Reward for eating apple")
     parser.add_argument("--death-penalty", "--death_penalty", type=float, default=-10.0, help="Penalty for dying")
-    parser.add_argument("--step-penalty", "--step_penalty", type=float, default=-0.01, help="Penalty per step")
+    parser.add_argument("--step-penalty", "--step_penalty", type=float, default=0.0, help="Penalty per step. Negative penalises, positive rewards movement.")
     
     # Training args
     parser.add_argument("--num-envs", "--num_envs", type=int, default=2048, help="Number of parallel environments")
