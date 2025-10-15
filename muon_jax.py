@@ -46,16 +46,25 @@ def muon(
         Orthogonalize matrix G using Newton-Schulz iteration.
         
         This iteratively computes G * (3I - G^T G) / 2 to produce an orthogonal matrix.
+        Handles 2D (dense), 3D (multi-head), and 4D (conv) tensors.
         """
-        # Handle different dimensionalities
         orig_shape = G.shape
-        if G.ndim == 2:
-            # 2D case - add dummy dimension for uniform processing
-            G = G[..., None]
         
-        a, b, c = G.shape
         # Reshape to 2D for orthogonalization
-        G_2d = G.reshape(a, b * c)
+        # For 2D: (a, b) -> (a, b)
+        # For 3D: (a, b, c) -> (a, b*c)
+        # For 4D: (a, b, c, d) -> (a*b, c*d) or (a, b*c*d) depending on convention
+        if G.ndim == 2:
+            G_2d = G
+        elif G.ndim == 3:
+            a, b, c = G.shape
+            G_2d = G.reshape(a, b * c)
+        elif G.ndim >= 4:
+            # For conv kernels (k_h, k_w, in_channels, out_channels)
+            # Reshape to (out_channels, k_h * k_w * in_channels)
+            G_2d = G.reshape(-1, G.shape[-1]).T
+        else:
+            return G  # Shouldn't happen, but safe fallback
         
         # Initial scaling - use linalg.norm for better performance
         norm_val = jnp.linalg.norm(G_2d)
@@ -69,10 +78,15 @@ def muon(
         
         G_2d, _ = jax.lax.scan(ns_step, G_2d, None, length=steps)
         
-        # Reshape back
-        result = G_2d.reshape(a, b, c)
-        if len(orig_shape) == 2:
-            result = result[..., 0]
+        # Reshape back to original shape
+        if G.ndim == 2:
+            result = G_2d
+        elif G.ndim == 3:
+            result = G_2d.reshape(orig_shape)
+        elif G.ndim >= 4:
+            # Reshape back from (out_channels, k_h * k_w * in_channels)
+            result = G_2d.T.reshape(orig_shape)
+        
         return result
     
     def init_fn(params):
