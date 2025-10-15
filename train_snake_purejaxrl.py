@@ -115,12 +115,12 @@ def parse_args():
 
 def main():
     args = parse_args()
-    
+
     print("=" * 70)
     print("🚀 GPU-NATIVE SNAKE TRAINING WITH PUREJAXRL PPO")
     print("=" * 70)
     print()
-    
+
     # Environment configuration
     env_config = EnvConfig(
         width=args.width,
@@ -130,7 +130,7 @@ def main():
         death_penalty=args.death_penalty,
         step_penalty=args.step_penalty
     )
-    
+
     # Training hyperparameters (dict format for PureJaxRL)
     config = {
         "NUM_ENVS": args.num_envs,
@@ -161,7 +161,7 @@ def main():
         "MUON_MOMENTUM": args.muon_momentum,
         "MUON_NESTEROV": args.muon_nesterov,
     }
-    
+
     # Derived values
     config["NUM_UPDATES"] = (
         config["TOTAL_TIMESTEPS"] // config["NUM_STEPS"] // config["NUM_ENVS"]
@@ -169,14 +169,14 @@ def main():
     config["MINIBATCH_SIZE"] = (
         config["NUM_ENVS"] * config["NUM_STEPS"] // config["NUM_MINIBATCHES"]
     )
-    
+
     # Generate run name
     if args.run_name:
         run_name = args.run_name
     else:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         run_name = f"snake_jax_{args.width}x{args.height}_{timestamp}"
-    
+
     # Initialize wandb
     if args.wandb:
         wandb.init(
@@ -193,7 +193,7 @@ def main():
         )
         print(f"📊 WandB initialized: {wandb.run.url}")
         print()
-    
+
     print(f"Configuration:")
     print(f"  Run name: {run_name}")
     print(f"  Environment: {env_config.width}x{env_config.height} Snake")
@@ -217,30 +217,30 @@ def main():
     if args.eval_freq > 0:
         print(f"  Evaluation: every {args.eval_freq} updates, {args.eval_episodes} episodes")
     print()
-    
+
     # Create environment with logging wrapper
     base_env = SnakeGymnaxWrapper(env_config)
     env = LogWrapper(base_env)  # Wrap with LogWrapper to track episode returns
     env_params = env.default_params
-    
+
     print(f"Environment:")
     print(f"  Observation shape: {env.observation_space(env_params).shape}")
     print(f"  Action space: {env.action_space(env_params).n}")
     print()
-    
+
     # Initialize RNG
     rng = jax.random.PRNGKey(args.seed)
-    
+
     # Create save directory
     save_dir = Path(args.save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
     run_dir = save_dir / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
-    
+
     print("Starting training...")
     print("=" * 70)
     print()
-    
+
     # Variables to track training state
     result = None
     runner_state = None
@@ -248,32 +248,32 @@ def main():
     interrupted = False
     train_time = 0
     best_eval_metrics = None  # Track metrics for the best model
-    
+
     try:
         # Training loop with progress bar and metrics tracking
         print("🚀 Training...")
         train_start = time.time()
-        
+
         # Import the step-by-step training function
         from train_snake_purejaxrl_impl import make_train_step, make_evaluate_fn
         init_fn, make_update_fn = make_train_step(config, env, env_params)
-        
+
         # Initialize training state
         print("   Initializing network and environment...")
         network, train_state, env_state, obsv, rng = init_fn(rng)
         runner_state = (train_state, env_state, obsv, rng)
-        
+
         # Create JIT-compiled update function
         update_fn = make_update_fn(network)
-        
+
         # Create JIT-compiled evaluation function if needed
         if args.eval_freq > 0:
             evaluate_fn = make_evaluate_fn(env, env_params, num_episodes=args.eval_episodes)
             print(f"   Evaluation enabled: {args.eval_episodes} episodes every {args.eval_freq} updates")
-        
+
         print("   Compiling update function (first call will be slow)...")
         print()
-        
+
         # Run training loop with progress bar
         all_metrics = []
         best_eval_return = float('-inf')
@@ -283,10 +283,10 @@ def main():
                   bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]',
                   colour='green',
                   dynamic_ncols=True) as pbar:
-            
+
             for update_idx in range(config['NUM_UPDATES']):
                 runner_state, metrics = update_fn(runner_state, update_idx)
-                
+
                 # metrics is now a tuple: (env_metrics, loss_metrics)
                 # Merge them into a single dict for logging
                 if isinstance(metrics, tuple) and len(metrics) == 2:
@@ -299,34 +299,34 @@ def main():
                 else:
                     # Fallback for older format
                     metrics = jax.tree_util.tree_map(lambda x: x.block_until_ready(), metrics)
-                
+
                 all_metrics.append(metrics)
-                
+
                 # Update progress bar
                 steps_completed = config['NUM_STEPS'] * config['NUM_ENVS']
                 pbar.update(steps_completed)
-                
+
                 # Run evaluation if needed
                 eval_metrics = None
                 if args.eval_freq > 0 and (update_idx + 1) % args.eval_freq == 0:
                     # Extract current train_state and params
                     current_train_state = runner_state[0]
                     current_rng = runner_state[3]
-                    
+
                     # Run evaluation
                     eval_rng, current_rng = jax.random.split(current_rng)
                     runner_state = (runner_state[0], runner_state[1], runner_state[2], current_rng)
-                    
+
                     eval_metrics = evaluate_fn(network, current_train_state.params, eval_rng)
                     eval_metrics = jax.tree_util.tree_map(lambda x: x.block_until_ready(), eval_metrics)
-                    
+
                     # Check if this is the best model so far
                     eval_return = float(eval_metrics['mean_return'])
                     if eval_return > best_eval_return:
                         prev_best = best_eval_return if best_eval_return > float('-inf') else None
                         best_eval_return = eval_return
                         best_eval_metrics = eval_metrics  # Store the metrics for the best model
-                        
+
                         # Save best model to disk
                         best_model_path = run_dir / "best_model.pkl"
                         with open(best_model_path, 'wb') as f:
@@ -339,13 +339,13 @@ def main():
                                 'update_idx': update_idx,
                                 'timesteps': (update_idx + 1) * config['NUM_STEPS'] * config['NUM_ENVS'],
                             }, f)
-                        
+
                         # Print update message
                         if prev_best is not None:
                             print(f"\n   🏆 New best eval return: {eval_return:.2f} (prev: {prev_best:.2f}) - saved to {best_model_path.name}")
                         else:
                             print(f"\n   🏆 Best eval return: {eval_return:.2f} - saved to {best_model_path.name}")
-                
+
                 # Log to wandb every update (real-time metrics)
                 # For detailed explanation of metrics, see METRICS_EXPLAINED.md
                 if args.wandb:
@@ -353,7 +353,7 @@ def main():
                         "train/update": update_idx,
                         "train/timesteps": (update_idx + 1) * steps_completed,
                     }
-                    
+
                     # Check if metrics has the expected structure from LogWrapper
                     # metrics is a dict with arrays of shape [num_steps, num_envs]
                     if isinstance(metrics, dict):
@@ -370,14 +370,14 @@ def main():
                             wandb_metrics["train/learning_rate"] = float(metrics['learning_rate'])
                         if 'aux_learning_rate' in metrics:
                             wandb_metrics["train/aux_learning_rate"] = float(metrics['aux_learning_rate'])
-                        
+
                         if 'returned_episode_returns' in metrics and 'returned_episode' in metrics:
                             # With LogWrapper, returned_episode is a boolean mask indicating which envs completed
                             # and returned_episode_returns contains the cumulative returns for completed episodes
                             # Shape: [num_steps, num_envs]
                             completed_mask = metrics['returned_episode']  # Boolean [num_steps, num_envs]
                             episode_returns = metrics['returned_episode_returns']  # [num_steps, num_envs]
-                            
+
                             # Get returns for completed episodes only
                             # Filter where completed_mask is True
                             if jnp.any(completed_mask):
@@ -386,17 +386,17 @@ def main():
                                 max_return = float(jnp.max(valid_returns))
                                 min_return = float(jnp.min(valid_returns))
                                 num_episodes = int(jnp.sum(completed_mask))
-                                
+
                                 wandb_metrics.update({
                                     "episode/mean_return": mean_return,
                                     "episode/max_return": max_return,
                                     "episode/min_return": min_return,
                                     "episode/count": num_episodes,
                                 })
-                                
+
                                 # Update progress bar description with latest mean return
                                 pbar.set_postfix({"mean_ret": f"{mean_return:.2f}", "episodes": num_episodes})
-                        
+
                         # Log episode lengths if available
                         if 'returned_episode_lengths' in metrics:
                             episode_lengths = metrics['returned_episode_lengths']
@@ -406,12 +406,12 @@ def main():
                                     valid_lengths = episode_lengths[completed_mask]
                                     mean_length = float(jnp.mean(valid_lengths))
                                     wandb_metrics["episode/mean_length"] = mean_length
-                        
+
                         # Log timesteps if available
                         if 'timestep' in metrics:
                             # Take the last timestep value from the batch
                             wandb_metrics["train/env_timestep"] = int(metrics['timestep'][-1, 0])
-                    
+
                     # Log evaluation metrics if available
                     if eval_metrics is not None:
                         wandb_metrics.update({
@@ -424,25 +424,25 @@ def main():
                             "eval/min_return": float(eval_metrics['min_return']),
                             "eval/best_return": best_eval_return,
                         })
-                        
+
                         # Update progress bar with eval metrics
                         pbar.set_postfix({
                             "eval_ret": f"{float(eval_metrics['mean_return']):.2f}",
                             "eval_score": f"{float(eval_metrics['mean_score']):.2f}",
                             "best": f"{best_eval_return:.2f}"
                         })
-                    
+
                     # Log the metrics
                     wandb.log(wandb_metrics)
-        
+
         # Combine results
         result = {
-            'runner_state': runner_state,
-            'metrics': jax.tree_util.tree_map(lambda *xs: jnp.stack(xs), *all_metrics)
+            "runner_state": runner_state,
+            "metrics": jax.tree.map(lambda *xs: jnp.stack(xs), *all_metrics) if all_metrics else {},
         }
-        
+
         train_time = time.time() - train_start
-        
+
         print()
         print("=" * 70)
         print("✅ TRAINING COMPLETE!")
@@ -454,11 +454,12 @@ def main():
         print(f"📊 Performance:")
         print(f"  Total steps: {config['TOTAL_TIMESTEPS']:,}")
         print(f"  Training FPS: {config['TOTAL_TIMESTEPS'] / train_time:,.0f}")
-        print(f"  Time per update: {train_time / config['NUM_UPDATES']:.3f}s")
+        if config['NUM_UPDATES'] > 0:
+            print(f"  Time per update: {train_time / config['NUM_UPDATES']:.3f}s")
         if args.eval_freq > 0:
             print(f"  Best eval return: {best_eval_return:.2f}")
         print()
-    
+
     except KeyboardInterrupt:
         train_time = time.time() - train_start
         interrupted = True
@@ -470,18 +471,18 @@ def main():
         print()
         print(f"⏱️  Training time before interrupt: {train_time:.2f}s")
         print()
-    
+
     finally:
         # Extract and log metrics if we have results
         metrics = {}
         if result is not None:
             metrics = result.get('metrics', {})
-        
+
             # Calculate mean episode returns if available
             if isinstance(metrics, dict) and 'returned_episode_returns' in metrics:
                 returns = metrics['returned_episode_returns']
                 episodes = metrics.get('returned_episode', None)
-                
+
                 if episodes is not None:
                     # Filter to only episodes that actually happened
                     valid_mask = episodes > 0
@@ -490,20 +491,20 @@ def main():
                         mean_return = float(jnp.mean(valid_returns))
                         max_return = float(jnp.max(valid_returns))
                         min_return = float(jnp.min(valid_returns))
-                        
+
                         print(f"📈 Episode Statistics:")
                         print(f"  Mean return: {mean_return:.2f}")
                         print(f"  Max return: {max_return:.2f}")
                         print(f"  Min return: {min_return:.2f}")
                         print()
-                        
+
                         if args.wandb:
                             wandb.log({
                                 "final/mean_return": mean_return,
                                 "final/max_return": max_return,
                                 "final/min_return": min_return,
                             })
-            
+
             # Log timing metrics to wandb
             if args.wandb and train_time > 0:
                 wandb.log({
@@ -511,17 +512,17 @@ def main():
                     "timing/training_fps": config['TOTAL_TIMESTEPS'] / train_time,
                     "interrupted": interrupted,
                 })
-                
+
                 # Log best eval return if evaluation was enabled
                 if args.eval_freq > 0 and best_eval_return > float('-inf'):
                     wandb.log({
                         "final/best_eval_return": best_eval_return,
                     })
-        
+
         if not interrupted:
             print("🎉 GPU-native training complete!")
             print()
-        
+
         # Save the trained model (even if interrupted)
         # Check if we have a runner_state (which contains the train_state with params)
         if runner_state is not None:
@@ -529,11 +530,11 @@ def main():
                 model_filename = "interrupted_model.pkl" if interrupted else "final_model.pkl"
                 print(f"💾 Saving model to {model_filename}...")
                 model_path = run_dir / model_filename
-                
+
                 # Extract train_state from runner_state
                 # runner_state is (train_state, env_state, obs, rng)
                 final_train_state = runner_state[0]
-                
+
                 # Save params and config
                 with open(model_path, 'wb') as f:
                     pickle.dump({
@@ -545,9 +546,9 @@ def main():
                         'interrupted': interrupted,
                         'train_time': train_time,
                     }, f)
-                
+
                 print(f"💾 Model saved to: {model_path}")
-                
+
                 if args.wandb:
                     # Save final model as wandb artifact
                     artifact_name = f"model-{run_name}-interrupted" if interrupted else f"model-{run_name}-final"
@@ -555,7 +556,7 @@ def main():
                     artifact.add_file(str(model_path))
                     wandb.log_artifact(artifact)
                     print(f"📦 Final model uploaded to WandB as '{artifact_name}'")
-                    
+
                     # Also upload best model if evaluation was enabled and we have one
                     if args.eval_freq > 0 and best_eval_return > float('-inf'):
                         best_model_path = run_dir / "best_model.pkl"
@@ -573,7 +574,7 @@ def main():
                                     'eval_max_return': float(best_eval_metrics.get('max_return', 0)),
                                     'eval_max_score': float(best_eval_metrics.get('max_score', 0)),
                                 })
-                            
+
                             best_artifact = wandb.Artifact(
                                 best_artifact_name, 
                                 type="model",
@@ -582,20 +583,20 @@ def main():
                             best_artifact.add_file(str(best_model_path))
                             wandb.log_artifact(best_artifact)
                             print(f"📦 Best model uploaded to WandB as '{best_artifact_name}' (eval return: {best_eval_return:.2f})")
-            
+
             except Exception as e:
                 print(f"⚠️  Error saving model: {e}")
                 print("   Training results may be lost.")
         else:
             print("⚠️  No model to save (training did not start or failed early)")
-        
+
         # Clean up wandb
         if args.wandb:
             try:
                 wandb.finish()
             except Exception:
                 pass
-        
+
         print()
 
 
