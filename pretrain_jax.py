@@ -330,6 +330,10 @@ def main():
         print(f"  Momentum: {args.muon_momentum}")
         print(f"  Nesterov: {args.muon_nesterov}")
         print(f"  Grad clip: {args.max_grad_norm}")
+        
+        # Store both schedules for logging
+        muon_lr_for_logging = muon_lr_schedule
+        aux_lr_for_logging = aux_lr_schedule
     else:
         # Use Adam optimizer with gradient clipping
         optimizer = optax.chain(
@@ -338,6 +342,10 @@ def main():
         )
         print(f"Optimizer: Adam")
         print(f"  Grad clip: {args.max_grad_norm}")
+        
+        # For Adam, only one LR to log
+        muon_lr_for_logging = None
+        aux_lr_for_logging = None
     print()
     
     state = TrainState.create(
@@ -417,19 +425,27 @@ def main():
         
         epoch_time = time.time() - epoch_start
         
-        # Get current learning rate
+        # Get current learning rate(s)
         current_lr = get_learning_rate(state, lr_schedule)
         
         # Print epoch results
         print(f"Epoch {epoch+1}/{args.epochs}:")
         print(f"  Train Loss: {train_loss:.4f}  Train Acc: {train_acc:.4f}")
         print(f"  Val Loss:   {val_loss:.4f}  Val Acc:   {val_acc:.4f}")
-        print(f"  LR: {current_lr:.2e}")
+        
+        if args.optimizer == "muon":
+            # Log both Muon and Adam LRs
+            muon_lr_current = get_learning_rate(state, muon_lr_for_logging)
+            aux_lr_current = get_learning_rate(state, aux_lr_for_logging)
+            print(f"  Muon LR: {muon_lr_current:.2e}  Adam LR: {aux_lr_current:.2e}")
+        else:
+            print(f"  LR: {current_lr:.2e}")
+        
         print(f"  Time: {epoch_time:.2f}s")
         
         # Log to wandb
         if args.wandb:
-            wandb.log({
+            log_dict = {
                 "epoch": epoch + 1,
                 "train/loss": train_loss,
                 "train/accuracy": train_acc,
@@ -437,7 +453,14 @@ def main():
                 "val/accuracy": val_acc,
                 "learning_rate": current_lr,
                 "epoch_time": epoch_time,
-            })
+            }
+            
+            # Add separate Muon/Adam LRs if using Muon
+            if args.optimizer == "muon":
+                log_dict["muon_lr"] = muon_lr_current
+                log_dict["adam_lr"] = aux_lr_current
+            
+            wandb.log(log_dict)
         
         # Save best model
         if val_acc > best_val_acc:
