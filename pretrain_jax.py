@@ -259,7 +259,6 @@ def main():
     # Create learning rate schedule
     if args.lr_schedule == "constant":
         lr_schedule = args.lr
-        print(f"Learning rate: {args.lr} (constant)")
     elif args.lr_schedule == "cosine":
         if args.warmup_epochs > 0:
             lr_schedule = optax.warmup_cosine_decay_schedule(
@@ -269,14 +268,12 @@ def main():
                 decay_steps=total_steps,
                 end_value=args.min_lr,
             )
-            print(f"Learning rate: {args.lr} -> {args.min_lr} (cosine with {args.warmup_epochs} warmup epochs)")
         else:
             lr_schedule = optax.cosine_decay_schedule(
                 init_value=args.lr,
                 decay_steps=total_steps,
                 alpha=args.min_lr / args.lr if args.lr > 0 else 0.0,
             )
-            print(f"Learning rate: {args.lr} -> {args.min_lr} (cosine)")
     elif args.lr_schedule == "linear":
         if args.warmup_epochs > 0:
             lr_schedule = optax.join_schedules(
@@ -294,29 +291,96 @@ def main():
                 ],
                 boundaries=[warmup_steps],
             )
-            print(f"Learning rate: 0.0 -> {args.lr} -> {args.min_lr} (linear with {args.warmup_epochs} warmup epochs)")
         else:
             lr_schedule = optax.linear_schedule(
                 init_value=args.lr,
                 end_value=args.min_lr,
                 transition_steps=total_steps,
             )
-            print(f"Learning rate: {args.lr} -> {args.min_lr} (linear)")
+    
+    # Create Muon learning rate schedules if using Muon optimizer
+    if args.optimizer == "muon":
+        muon_lr = args.muon_lr if args.muon_lr is not None else args.lr
+        aux_lr = args.muon_aux_lr if args.muon_aux_lr is not None else args.lr
+        
+        # Create schedules for Muon and auxiliary parameters
+        if args.lr_schedule == "constant":
+            muon_lr_schedule = muon_lr
+            aux_lr_schedule = aux_lr
+        elif args.lr_schedule == "cosine":
+            if args.warmup_epochs > 0:
+                muon_lr_schedule = optax.warmup_cosine_decay_schedule(
+                    init_value=0.0,
+                    peak_value=muon_lr,
+                    warmup_steps=warmup_steps,
+                    decay_steps=total_steps,
+                    end_value=args.min_lr * (muon_lr / args.lr) if args.lr > 0 else 0.0,
+                )
+                aux_lr_schedule = optax.warmup_cosine_decay_schedule(
+                    init_value=0.0,
+                    peak_value=aux_lr,
+                    warmup_steps=warmup_steps,
+                    decay_steps=total_steps,
+                    end_value=args.min_lr * (aux_lr / args.lr) if args.lr > 0 else 0.0,
+                )
+            else:
+                muon_lr_schedule = optax.cosine_decay_schedule(
+                    init_value=muon_lr,
+                    decay_steps=total_steps,
+                    alpha=args.min_lr / args.lr if args.lr > 0 else 0.0,
+                )
+                aux_lr_schedule = optax.cosine_decay_schedule(
+                    init_value=aux_lr,
+                    decay_steps=total_steps,
+                    alpha=args.min_lr / args.lr if args.lr > 0 else 0.0,
+                )
+        elif args.lr_schedule == "linear":
+            if args.warmup_epochs > 0:
+                muon_lr_schedule = optax.join_schedules(
+                    schedules=[
+                        optax.linear_schedule(
+                            init_value=0.0,
+                            end_value=muon_lr,
+                            transition_steps=warmup_steps,
+                        ),
+                        optax.linear_schedule(
+                            init_value=muon_lr,
+                            end_value=args.min_lr * (muon_lr / args.lr) if args.lr > 0 else 0.0,
+                            transition_steps=total_steps - warmup_steps,
+                        ),
+                    ],
+                    boundaries=[warmup_steps],
+                )
+                aux_lr_schedule = optax.join_schedules(
+                    schedules=[
+                        optax.linear_schedule(
+                            init_value=0.0,
+                            end_value=aux_lr,
+                            transition_steps=warmup_steps,
+                        ),
+                        optax.linear_schedule(
+                            init_value=aux_lr,
+                            end_value=args.min_lr * (aux_lr / args.lr) if args.lr > 0 else 0.0,
+                            transition_steps=total_steps - warmup_steps,
+                        ),
+                    ],
+                    boundaries=[warmup_steps],
+                )
+            else:
+                muon_lr_schedule = optax.linear_schedule(
+                    init_value=muon_lr,
+                    end_value=args.min_lr * (muon_lr / args.lr) if args.lr > 0 else 0.0,
+                    transition_steps=total_steps,
+                )
+                aux_lr_schedule = optax.linear_schedule(
+                    init_value=aux_lr,
+                    end_value=args.min_lr * (aux_lr / args.lr) if args.lr > 0 else 0.0,
+                    transition_steps=total_steps,
+                )
     
     # Create optimizer
     if args.optimizer == "muon":
         # Use Muon optimizer with gradient clipping
-        muon_lr = args.muon_lr if args.muon_lr is not None else args.lr
-        aux_lr = args.muon_aux_lr if args.muon_aux_lr is not None else args.lr
-        
-        # Apply schedule to both learning rates if using schedule
-        if callable(lr_schedule):
-            muon_lr_schedule = lambda step: muon_lr * (lr_schedule(step) / args.lr)
-            aux_lr_schedule = lambda step: aux_lr * (lr_schedule(step) / args.lr)
-        else:
-            muon_lr_schedule = muon_lr
-            aux_lr_schedule = aux_lr
-        
         optimizer = chain_with_muon(
             muon_lr=muon_lr_schedule,
             aux_lr=aux_lr_schedule,
@@ -325,8 +389,6 @@ def main():
             nesterov=args.muon_nesterov,
         )
         print(f"Optimizer: Muon")
-        print(f"  Muon LR (weights): {muon_lr}")
-        print(f"  Adam LR (aux): {aux_lr}")
         print(f"  Momentum: {args.muon_momentum}")
         print(f"  Nesterov: {args.muon_nesterov}")
         print(f"  Grad clip: {args.max_grad_norm}")
@@ -346,6 +408,46 @@ def main():
         # For Adam, only one LR to log
         muon_lr_for_logging = None
         aux_lr_for_logging = None
+    
+    # Print active learning rate schedules
+    print(f"\nLearning Rate Schedules:")
+    if args.optimizer == "muon":
+        # Print Muon schedule details
+        if args.lr_schedule == "constant":
+            print(f"  Muon LR (weights): {muon_lr} (constant)")
+            print(f"  Adam LR (aux):     {aux_lr} (constant)")
+        elif args.lr_schedule == "cosine":
+            muon_end_lr = args.min_lr * (muon_lr / args.lr) if args.lr > 0 else 0.0
+            aux_end_lr = args.min_lr * (aux_lr / args.lr) if args.lr > 0 else 0.0
+            if args.warmup_epochs > 0:
+                print(f"  Muon LR (weights): 0.0 -> {muon_lr} -> {muon_end_lr:.2e} (cosine, {args.warmup_epochs} warmup epochs)")
+                print(f"  Adam LR (aux):     0.0 -> {aux_lr} -> {aux_end_lr:.2e} (cosine, {args.warmup_epochs} warmup epochs)")
+            else:
+                print(f"  Muon LR (weights): {muon_lr} -> {muon_end_lr:.2e} (cosine)")
+                print(f"  Adam LR (aux):     {aux_lr} -> {aux_end_lr:.2e} (cosine)")
+        elif args.lr_schedule == "linear":
+            muon_end_lr = args.min_lr * (muon_lr / args.lr) if args.lr > 0 else 0.0
+            aux_end_lr = args.min_lr * (aux_lr / args.lr) if args.lr > 0 else 0.0
+            if args.warmup_epochs > 0:
+                print(f"  Muon LR (weights): 0.0 -> {muon_lr} -> {muon_end_lr:.2e} (linear, {args.warmup_epochs} warmup epochs)")
+                print(f"  Adam LR (aux):     0.0 -> {aux_lr} -> {aux_end_lr:.2e} (linear, {args.warmup_epochs} warmup epochs)")
+            else:
+                print(f"  Muon LR (weights): {muon_lr} -> {muon_end_lr:.2e} (linear)")
+                print(f"  Adam LR (aux):     {aux_lr} -> {aux_end_lr:.2e} (linear)")
+    else:
+        # Print Adam schedule details
+        if args.lr_schedule == "constant":
+            print(f"  Adam LR: {args.lr} (constant)")
+        elif args.lr_schedule == "cosine":
+            if args.warmup_epochs > 0:
+                print(f"  Adam LR: 0.0 -> {args.lr} -> {args.min_lr:.2e} (cosine, {args.warmup_epochs} warmup epochs)")
+            else:
+                print(f"  Adam LR: {args.lr} -> {args.min_lr:.2e} (cosine)")
+        elif args.lr_schedule == "linear":
+            if args.warmup_epochs > 0:
+                print(f"  Adam LR: 0.0 -> {args.lr} -> {args.min_lr:.2e} (linear, {args.warmup_epochs} warmup epochs)")
+            else:
+                print(f"  Adam LR: {args.lr} -> {args.min_lr:.2e} (linear)")
     print()
     
     state = TrainState.create(
