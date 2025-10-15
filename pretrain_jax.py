@@ -18,6 +18,7 @@ from tqdm.auto import tqdm
 import wandb
 
 from snake_jax.network import TransformerPolicy
+from muon_jax import chain_with_muon
 
 
 class TrainState(train_state.TrainState):
@@ -145,6 +146,14 @@ def evaluate(state, states_batched, actions_batched, desc="Validation"):
     return total_loss / n_batches, total_acc / n_batches
 
 
+def get_learning_rate(state, lr_schedule):
+    """Get current learning rate from schedule or constant value"""
+    if callable(lr_schedule):
+        return float(lr_schedule(state.step))
+    else:
+        return float(lr_schedule)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Pretrain JAX Transformer on Snake dataset")
     parser.add_argument("--dataset", type=str, required=True, help="Path to dataset pickle file")
@@ -163,6 +172,29 @@ def main():
     parser.add_argument("--run-name", type=str, default=None)
     parser.add_argument("--save-dir", type=str, default="pretrain_models")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    
+    # Optimizer options
+    parser.add_argument("--optimizer", type=str, default="adam", choices=["adam", "muon"],
+                        help="Optimizer to use (default: adam)")
+    parser.add_argument("--muon-lr", type=float, default=None,
+                        help="Learning rate for Muon optimizer on weight matrices (uses --lr if not specified)")
+    parser.add_argument("--muon-aux-lr", type=float, default=None,
+                        help="Learning rate for Adam on auxiliary params when using Muon (uses --lr if not specified)")
+    parser.add_argument("--muon-momentum", type=float, default=0.95,
+                        help="Momentum for Muon optimizer (default: 0.95)")
+    parser.add_argument("--muon-nesterov", action="store_true", default=True,
+                        help="Use Nesterov momentum for Muon (default: True)")
+    parser.add_argument("--max-grad-norm", type=float, default=1.0,
+                        help="Maximum gradient norm for clipping (default: 1.0)")
+    
+    # Learning rate schedule options
+    parser.add_argument("--lr-schedule", type=str, default="constant", 
+                        choices=["constant", "cosine", "linear"],
+                        help="Learning rate schedule (default: constant)")
+    parser.add_argument("--warmup-epochs", type=int, default=0,
+                        help="Number of warmup epochs for LR schedule (default: 0)")
+    parser.add_argument("--min-lr", type=float, default=0.0,
+                        help="Minimum learning rate for cosine schedule (default: 0.0)")
     
     args = parser.parse_args()
     
@@ -219,8 +251,95 @@ def main():
         print(f"  CNN mode: {args.cnn_mode}")
     print()
     
+    # Calculate total training steps for schedule
+    n_batches_per_epoch = n_train // args.batch_size
+    total_steps = n_batches_per_epoch * args.epochs
+    warmup_steps = n_batches_per_epoch * args.warmup_epochs
+    
+    # Create learning rate schedule
+    if args.lr_schedule == "constant":
+        lr_schedule = args.lr
+        print(f"Learning rate: {args.lr} (constant)")
+    elif args.lr_schedule == "cosine":
+        if args.warmup_epochs > 0:
+            lr_schedule = optax.warmup_cosine_decay_schedule(
+                init_value=0.0,
+                peak_value=args.lr,
+                warmup_steps=warmup_steps,
+                decay_steps=total_steps,
+                end_value=args.min_lr,
+            )
+            print(f"Learning rate: {args.lr} -> {args.min_lr} (cosine with {args.warmup_epochs} warmup epochs)")
+        else:
+            lr_schedule = optax.cosine_decay_schedule(
+                init_value=args.lr,
+                decay_steps=total_steps,
+                alpha=args.min_lr / args.lr if args.lr > 0 else 0.0,
+            )
+            print(f"Learning rate: {args.lr} -> {args.min_lr} (cosine)")
+    elif args.lr_schedule == "linear":
+        if args.warmup_epochs > 0:
+            lr_schedule = optax.join_schedules(
+                schedules=[
+                    optax.linear_schedule(
+                        init_value=0.0,
+                        end_value=args.lr,
+                        transition_steps=warmup_steps,
+                    ),
+                    optax.linear_schedule(
+                        init_value=args.lr,
+                        end_value=args.min_lr,
+                        transition_steps=total_steps - warmup_steps,
+                    ),
+                ],
+                boundaries=[warmup_steps],
+            )
+            print(f"Learning rate: 0.0 -> {args.lr} -> {args.min_lr} (linear with {args.warmup_epochs} warmup epochs)")
+        else:
+            lr_schedule = optax.linear_schedule(
+                init_value=args.lr,
+                end_value=args.min_lr,
+                transition_steps=total_steps,
+            )
+            print(f"Learning rate: {args.lr} -> {args.min_lr} (linear)")
+    
     # Create optimizer
-    optimizer = optax.adam(args.lr)
+    if args.optimizer == "muon":
+        # Use Muon optimizer with gradient clipping
+        muon_lr = args.muon_lr if args.muon_lr is not None else args.lr
+        aux_lr = args.muon_aux_lr if args.muon_aux_lr is not None else args.lr
+        
+        # Apply schedule to both learning rates if using schedule
+        if callable(lr_schedule):
+            muon_lr_schedule = lambda step: muon_lr * (lr_schedule(step) / args.lr)
+            aux_lr_schedule = lambda step: aux_lr * (lr_schedule(step) / args.lr)
+        else:
+            muon_lr_schedule = muon_lr
+            aux_lr_schedule = aux_lr
+        
+        optimizer = chain_with_muon(
+            muon_lr=muon_lr_schedule,
+            aux_lr=aux_lr_schedule,
+            max_grad_norm=args.max_grad_norm,
+            momentum=args.muon_momentum,
+            nesterov=args.muon_nesterov,
+        )
+        print(f"Optimizer: Muon")
+        print(f"  Muon LR (weights): {muon_lr}")
+        print(f"  Adam LR (aux): {aux_lr}")
+        print(f"  Momentum: {args.muon_momentum}")
+        print(f"  Nesterov: {args.muon_nesterov}")
+        print(f"  Grad clip: {args.max_grad_norm}")
+    else:
+        # Use Adam optimizer with gradient clipping
+        optimizer = optax.chain(
+            optax.clip_by_global_norm(args.max_grad_norm),
+            optax.adam(lr_schedule),
+        )
+        print(f"Optimizer: Adam")
+        print(f"  Grad clip: {args.max_grad_norm}")
+    print()
+    
     state = TrainState.create(
         apply_fn=network.apply,
         params=params,
@@ -237,6 +356,11 @@ def main():
                 "epochs": args.epochs,
                 "batch_size": args.batch_size,
                 "lr": args.lr,
+                "optimizer": args.optimizer,
+                "lr_schedule": args.lr_schedule,
+                "warmup_epochs": args.warmup_epochs,
+                "min_lr": args.min_lr,
+                "max_grad_norm": args.max_grad_norm,
                 "d_model": args.d_model,
                 "num_layers": args.num_layers,
                 "num_heads": args.num_heads,
@@ -247,6 +371,13 @@ def main():
                 "val_samples": n_val,
             }
         )
+        if args.optimizer == "muon":
+            wandb.config.update({
+                "muon_lr": args.muon_lr if args.muon_lr is not None else args.lr,
+                "muon_aux_lr": args.muon_aux_lr if args.muon_aux_lr is not None else args.lr,
+                "muon_momentum": args.muon_momentum,
+                "muon_nesterov": args.muon_nesterov,
+            })
         print(f"📊 WandB initialized: {wandb.run.url}")
         print()
     
@@ -286,10 +417,14 @@ def main():
         
         epoch_time = time.time() - epoch_start
         
+        # Get current learning rate
+        current_lr = get_learning_rate(state, lr_schedule)
+        
         # Print epoch results
         print(f"Epoch {epoch+1}/{args.epochs}:")
         print(f"  Train Loss: {train_loss:.4f}  Train Acc: {train_acc:.4f}")
         print(f"  Val Loss:   {val_loss:.4f}  Val Acc:   {val_acc:.4f}")
+        print(f"  LR: {current_lr:.2e}")
         print(f"  Time: {epoch_time:.2f}s")
         
         # Log to wandb
@@ -300,6 +435,7 @@ def main():
                 "train/accuracy": train_acc,
                 "val/loss": val_loss,
                 "val/accuracy": val_acc,
+                "learning_rate": current_lr,
                 "epoch_time": epoch_time,
             })
         
