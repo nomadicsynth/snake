@@ -45,24 +45,22 @@ def load_dataset(dataset_path):
 
 
 def create_batches(states, actions, batch_size, rng):
-    """Create shuffled batches"""
+    """Create shuffled batches as a generator"""
     n_samples = len(states)
     n_batches = n_samples // batch_size
 
-    # Shuffle
+    # Shuffle indices only
     perm = jax.random.permutation(rng, n_samples)
-    states_shuffled = states[perm]
-    actions_shuffled = actions[perm]
-
+    
     # Trim to fit batch size
-    states_trimmed = states_shuffled[: n_batches * batch_size]
-    actions_trimmed = actions_shuffled[: n_batches * batch_size]
-
-    # Reshape into batches
-    states_batched = states_trimmed.reshape(n_batches, batch_size, *states.shape[1:])
-    actions_batched = actions_trimmed.reshape(n_batches, batch_size)
-
-    return states_batched, actions_batched
+    perm_trimmed = perm[: n_batches * batch_size]
+    
+    # Yield batches one at a time
+    for i in range(n_batches):
+        batch_perm = perm_trimmed[i * batch_size : (i + 1) * batch_size]
+        batch_states = states[batch_perm]
+        batch_actions = actions[batch_perm]
+        yield batch_states, batch_actions
 
 
 def compute_metrics(logits, labels):
@@ -97,17 +95,16 @@ def eval_step(params, apply_fn, batch_states, batch_actions):
     return loss, accuracy
 
 
-def train_epoch(state, states_batched, actions_batched, rng, desc="Training"):
+def train_epoch(state, batches, rng, n_batches, desc="Training"):
     """Train for one epoch"""
     total_loss = 0.0
     total_acc = 0.0
-    n_batches = len(states_batched)
 
-    for batch_idx in tqdm(range(n_batches), desc=desc, leave=False):
+    for batch_states, batch_actions in tqdm(batches, desc=desc, leave=False, total=n_batches):
         # Split RNG for this batch
         rng, dropout_rng = jax.random.split(rng)
 
-        state, loss, acc = train_step(state, states_batched[batch_idx], actions_batched[batch_idx], dropout_rng)
+        state, loss, acc = train_step(state, batch_states, batch_actions, dropout_rng)
 
         # Block until ready for accurate metrics
         loss = loss.block_until_ready()
@@ -119,14 +116,13 @@ def train_epoch(state, states_batched, actions_batched, rng, desc="Training"):
     return state, total_loss / n_batches, total_acc / n_batches, rng
 
 
-def evaluate(state, states_batched, actions_batched, desc="Validation"):
+def evaluate(state, batches, n_batches, desc="Validation"):
     """Evaluate on validation set"""
     total_loss = 0.0
     total_acc = 0.0
-    n_batches = len(states_batched)
 
-    for batch_idx in tqdm(range(n_batches), desc=desc, leave=False):
-        loss, acc = eval_step(state.params, state.apply_fn, states_batched[batch_idx], actions_batched[batch_idx])
+    for batch_states, batch_actions in tqdm(batches, desc=desc, leave=False, total=n_batches):
+        loss, acc = eval_step(state.params, state.apply_fn, batch_states, batch_actions)
 
         loss = loss.block_until_ready()
         acc = acc.block_until_ready()
@@ -217,6 +213,9 @@ def main():
     print(f"  Batch size: {args.batch_size}")
     print(f"  Batches per epoch: {n_train // args.batch_size}")
     print()
+
+    n_train_batches = n_train // args.batch_size
+    n_val_batches = n_val // args.batch_size
 
     # Initialize model
     print("Initializing model...")
@@ -517,20 +516,20 @@ def main():
 
         # Create shuffled batches
         rng, shuffle_rng = jax.random.split(rng)
-        train_states_batched, train_actions_batched = create_batches(
+        train_batches = create_batches(
             train_states, train_actions, args.batch_size, shuffle_rng
         )
 
-        val_states_batched, val_actions_batched = create_batches(val_states, val_actions, args.batch_size, shuffle_rng)
+        val_batches = create_batches(val_states, val_actions, args.batch_size, shuffle_rng)
 
         # Train epoch
         state, train_loss, train_acc, rng = train_epoch(
-            state, train_states_batched, train_actions_batched, rng, desc=f"Epoch {epoch+1}/{args.epochs} [Train]"
+            state, train_batches, rng, n_train_batches, desc=f"Epoch {epoch+1}/{args.epochs} [Train]"
         )
 
         # Validate
         val_loss, val_acc = evaluate(
-            state, val_states_batched, val_actions_batched, desc=f"Epoch {epoch+1}/{args.epochs} [Val]"
+            state, val_batches, n_val_batches, desc=f"Epoch {epoch+1}/{args.epochs} [Val]"
         )
 
         epoch_time = time.time() - epoch_start
