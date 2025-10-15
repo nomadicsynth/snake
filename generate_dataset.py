@@ -38,6 +38,12 @@ def main():
                        help='Apply 8x geometric augmentation (default: True)')
     parser.add_argument('--no-augment', dest='augment', action='store_false',
                        help='Skip augmentation')
+    parser.add_argument('--failure-ratio', type=float, default=0.0,
+                       help='Ratio of random/failure action samples to add')
+    parser.add_argument('--epsilon-greedy-ratio', type=float, default=0.0,
+                       help='Ratio of epsilon-greedy samples to add')
+    parser.add_argument('--epsilon', type=float, default=0.3,
+                       help='Epsilon value for epsilon-greedy sampling')
     parser.add_argument('--output', type=str, default='snake_pretrain_dataset.pkl',
                        help='Output file path')
     parser.add_argument('--seed', type=int, default=42,
@@ -54,12 +60,20 @@ def main():
     print(f"  Snake length: {args.min_length}-{args.max_length}")
     print(f"  Expert strategy: {'A*' if args.use_astar else 'Heuristic'}")
     print(f"  Augmentation: {'Yes (8x)' if args.augment else 'No'}")
+    print(f"  Failure ratio: {args.failure_ratio:.2%}")
+    print(f"  Epsilon-greedy ratio: {args.epsilon_greedy_ratio:.2%} (ε={args.epsilon})")
     print(f"  Seed: {args.seed}")
     print(f"  Output: {args.output}")
     
     if args.augment:
-        final_size = args.num_samples * 8
+        base_size = args.num_samples * 8
+        failure_size = int(base_size * args.failure_ratio)
+        epsilon_size = int(base_size * args.epsilon_greedy_ratio)
+        final_size = base_size + failure_size + epsilon_size
         print(f"\n  Expected final size: {final_size:,} samples")
+        print(f"    Expert: {base_size:,}")
+        print(f"    Failure: {failure_size:,}")
+        print(f"    Epsilon-greedy: {epsilon_size:,}")
     
     print("\n" + "=" * 60)
     
@@ -73,7 +87,10 @@ def main():
         use_astar=args.use_astar,
         temperature=args.temperature,
         augment=args.augment,
-        seed=args.seed
+        seed=args.seed,
+        failure_ratio=args.failure_ratio,
+        epsilon_greedy_ratio=args.epsilon_greedy_ratio,
+        epsilon=args.epsilon
     )
     
     # Analyze

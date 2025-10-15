@@ -143,10 +143,13 @@ def generate_pretraining_dataset(
     use_astar: bool = True,
     temperature: float = 0.5,
     augment: bool = True,
+    failure_ratio: float = 0.0,
+    epsilon_greedy_ratio: float = 0.0,
+    epsilon: float = 0.3,
     seed: Optional[int] = None
 ) -> List[Dict]:
     """
-    Generate pretraining dataset with expert labels.
+    Generate pretraining dataset with expert labels and optional failure samples.
     
     Args:
         num_samples: Number of unique states to generate
@@ -155,6 +158,9 @@ def generate_pretraining_dataset(
         use_astar: Use A* for labels (vs heuristic)
         temperature: Softmax temperature for soft labels
         augment: Apply 8x geometric augmentation
+        failure_ratio: Ratio of random/failure actions to include (0.0-1.0)
+        epsilon_greedy_ratio: Ratio of epsilon-greedy samples to include (0.0-1.0)
+        epsilon: Epsilon value for epsilon-greedy sampling
         seed: Random seed
     
     Returns:
@@ -233,6 +239,79 @@ def generate_pretraining_dataset(
     
     if len(dataset) < num_samples:
         print(f"Warning: Only generated {len(dataset)}/{num_samples} samples")
+    
+    # Add failure samples (random actions)
+    if failure_ratio > 0:
+        num_failures = int(len(dataset) * failure_ratio)
+        print(f"Adding {num_failures} failure samples (random actions)...")
+        
+        failure_samples = []
+        for i in tqdm(range(num_failures), desc="Generating failures"):
+            # Pick a random sample from the dataset
+            base_sample = random.choice(dataset)
+            
+            # Get safe actions for this state
+            # Extract snake positions from state (reverse of state_from_positions)
+            state = base_sample['state']
+            snake_positions = []
+            for y in range(height):
+                for x in range(width):
+                    if state[y, x, 1] > 0:  # Green channel = snake
+                        snake_positions.append((y, x))
+            
+            safe_actions = get_safe_actions(snake_positions, width, height)
+            if not safe_actions:
+                continue
+            
+            # Pick a random action (could be safe or unsafe)
+            random_action = random.randint(0, 3)
+            
+            # Create uniform probability distribution
+            failure_probs = np.ones(4, dtype=np.float32) / 4.0
+            
+            failure_samples.append({
+                'state': state.copy(),
+                'action': random_action,
+                'action_probs': failure_probs,
+                'metadata': base_sample['metadata'].copy()
+            })
+        
+        dataset.extend(failure_samples)
+        print(f"Dataset size after failures: {len(dataset)}")
+    
+    # Add epsilon-greedy samples
+    if epsilon_greedy_ratio > 0:
+        num_epsilon = int(len(dataset) * epsilon_greedy_ratio)
+        print(f"Adding {num_epsilon} epsilon-greedy samples (ε={epsilon})...")
+        
+        epsilon_samples = []
+        for i in tqdm(range(num_epsilon), desc="Generating epsilon-greedy"):
+            # Pick a random sample from the dataset
+            base_sample = random.choice(dataset)
+            
+            # With probability epsilon, use random action; otherwise use expert
+            if random.random() < epsilon:
+                # Random action
+                random_action = random.randint(0, 3)
+                epsilon_probs = np.ones(4, dtype=np.float32) / 4.0
+            else:
+                # Use expert action
+                random_action = base_sample['action']
+                epsilon_probs = base_sample['action_probs'].copy()
+            
+            epsilon_samples.append({
+                'state': base_sample['state'].copy(),
+                'action': random_action,
+                'action_probs': epsilon_probs,
+                'metadata': base_sample['metadata'].copy()
+            })
+        
+        dataset.extend(epsilon_samples)
+        print(f"Dataset size after epsilon-greedy: {len(dataset)}")
+    
+    # Shuffle to mix expert/failure/epsilon samples
+    if failure_ratio > 0 or epsilon_greedy_ratio > 0:
+        random.shuffle(dataset)
     
     # Apply augmentation if requested
     if augment:
