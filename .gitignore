@@ -12,3 +12,6 @@ wandb/
 .env
 benchmark_results_*.json
 *.mp4
+benchmark_cnn_report_*.md
+benchmark_cnn_results_*.json
+benchmark_run.log
