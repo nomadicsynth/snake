@@ -25,7 +25,7 @@ def render_state(state, env_config, mode="graphical", return_frame=False):
     """Render the game state in ASCII or graphical mode (default: graphical)
     If return_frame is True, returns the RGB numpy array for video saving."""
     if mode == "ascii":
-        grid = [['.' for _ in range(env_config.width)] for _ in range(env_config.height)]
+        grid = [['  ' for _ in range(env_config.width)] for _ in range(env_config.height)]
         # Place food
         food_x, food_y = int(state.food_pos[0]), int(state.food_pos[1])
         if 0 <= food_y < env_config.height and 0 <= food_x < env_config.width:
@@ -39,10 +39,10 @@ def render_state(state, env_config, mode="graphical", return_frame=False):
                 else:
                     grid[y][x] = '🟩'  # Body
         # Print grid
-        print('\n' + '┌' + '──' * env_config.width + '┐')
+        print("\n" + "┌" + "───" * env_config.width + "┐")
         for row in grid:
             print('│' + ''.join(f'{cell} ' for cell in row) + '│')
-        print('└' + '──' * env_config.width + '┘')
+        print("└" + "───" * env_config.width + "┘")
         print(f'Length: {state.snake_length} | Score: {state.score}')
         return None
     else:
@@ -64,7 +64,15 @@ def render_state(state, env_config, mode="graphical", return_frame=False):
                     grid[y, x] = [0.0, 0.5, 0.0]  # Body: darker green
         plt.clf()
         plt.imshow(grid, interpolation='nearest')
-        plt.title(f"Length: {state.snake_length} | Score: {state.score}")
+        # Add moves/steps to title if available
+        moves = getattr(state, 'steps', None)
+        if moves is None:
+            # Try to infer from state if possible
+            moves = None
+        title_str = f"Length: {state.snake_length} | Score: {state.score}"
+        if moves is not None:
+            title_str += f" | Moves: {moves}"
+        plt.title(title_str)
         plt.axis('off')
         plt.pause(0.001)
         if return_frame:
