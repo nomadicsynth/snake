@@ -384,3 +384,40 @@ AUGMENTATIONS = [
     'identity', 'rot90', 'rot180', 'rot270',
     'flip_h', 'flip_v', 'flip_h_rot90', 'flip_v_rot90'
 ]
+
+
+def get_positions_from_state(
+    state: np.ndarray
+) -> Tuple[List[Tuple[int, int]], Tuple[int, int]]:
+    """
+    Extract snake positions and food position from state array.
+    Inverse of state_from_positions.
+    
+    Args:
+        state: (H, W, 3) state array
+    
+    Returns:
+        snake_positions: List of (row, col) tuples
+        food_pos: (row, col) tuple
+    """
+    height, width, _ = state.shape
+    
+    # Extract food position (red channel)
+    food_positions = np.argwhere(state[:, :, 0] > 0)
+    if len(food_positions) == 0:
+        raise ValueError("No food found in state")
+    food_pos = tuple(food_positions[0])
+    
+    # Extract snake positions (green channel has values)
+    # Higher green value = closer to head
+    snake_cells = []
+    for y in range(height):
+        for x in range(width):
+            if state[y, x, 1] > 0:
+                snake_cells.append(((y, x), state[y, x, 1]))
+    
+    # Sort by green value (descending) to get head first
+    snake_cells.sort(key=lambda x: x[1], reverse=True)
+    snake_positions = [pos for pos, _ in snake_cells]
+    
+    return snake_positions, food_pos

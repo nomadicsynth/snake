@@ -36,15 +36,22 @@ def load_dataset(dataset_path):
     # Dataset is a list of dicts with 'state' and 'action' keys
     states = jnp.array([sample["state"] for sample in data], dtype=jnp.float32)
     actions = jnp.array([sample["action"] for sample in data], dtype=jnp.int32)
+    
+    # Check if dataset has reasoning tokens (RSM mode)
+    has_reasoning = "reasoning_tokens" in data[0]
+    reasoning_tokens = None
+    if has_reasoning:
+        reasoning_tokens = jnp.array([sample["reasoning_tokens"] for sample in data], dtype=jnp.int32)
+        print(f"  ✓ RSM mode: Reasoning tokens loaded (shape: {reasoning_tokens.shape})")
 
     print(f"Dataset loaded: {len(states)} samples")
     print(f"  State shape: {states.shape}")
     print(f"  Action distribution: {jnp.bincount(actions, length=4)}")
 
-    return states, actions
+    return states, actions, reasoning_tokens
 
 
-def create_batches(states, actions, batch_size, rng):
+def create_batches(states, actions, batch_size, rng, reasoning_tokens=None):
     """Create shuffled batches as a generator"""
     n_samples = len(states)
     n_batches = n_samples // batch_size
@@ -60,7 +67,12 @@ def create_batches(states, actions, batch_size, rng):
         batch_perm = perm_trimmed[i * batch_size : (i + 1) * batch_size]
         batch_states = states[batch_perm]
         batch_actions = actions[batch_perm]
-        yield batch_states, batch_actions
+        
+        if reasoning_tokens is not None:
+            batch_reasoning = reasoning_tokens[batch_perm]
+            yield batch_states, batch_actions, batch_reasoning
+        else:
+            yield batch_states, batch_actions, None
 
 
 def compute_metrics(logits, labels):
@@ -71,27 +83,40 @@ def compute_metrics(logits, labels):
 
 
 @jax.jit
-def train_step(state, batch_states, batch_actions, dropout_rng):
+def train_step(state, batch_states, batch_actions, dropout_rng, batch_reasoning=None):
     """Single training step"""
 
     def loss_fn(params):
-        logits, _ = state.apply_fn(params, batch_states, training=True, rngs={"dropout": dropout_rng})
-        loss = optax.softmax_cross_entropy_with_integer_labels(logits, batch_actions).mean()
-        return loss, logits
+        logits, _ = state.apply_fn(
+            params, batch_states, 
+            training=True, 
+            rngs={"dropout": dropout_rng},
+            reasoning_tokens=batch_reasoning
+        )
+        
+        # For RSM models, logits are (batch, num_actions + vocab_size)
+        # We only care about the action logits (first num_actions)
+        action_logits = logits[:, :4]  # Extract action predictions
+        
+        loss = optax.softmax_cross_entropy_with_integer_labels(action_logits, batch_actions).mean()
+        return loss, action_logits
 
-    (loss, logits), grads = jax.value_and_grad(loss_fn, has_aux=True)(state.params)
+    (loss, action_logits), grads = jax.value_and_grad(loss_fn, has_aux=True)(state.params)
     state = state.apply_gradients(grads=grads)
 
-    accuracy = (logits.argmax(axis=-1) == batch_actions).mean()
+    accuracy = (action_logits.argmax(axis=-1) == batch_actions).mean()
 
     return state, loss, accuracy
 
 
-def eval_step(params, apply_fn, batch_states, batch_actions):
+def eval_step(params, apply_fn, batch_states, batch_actions, batch_reasoning=None):
     """Single evaluation step"""
     # No dropout during evaluation
-    logits, _ = apply_fn(params, batch_states, training=False)
-    loss, accuracy = compute_metrics(logits, batch_actions)
+    logits, _ = apply_fn(params, batch_states, training=False, reasoning_tokens=batch_reasoning)
+    
+    # Extract action logits for RSM models
+    action_logits = logits[:, :4]
+    loss, accuracy = compute_metrics(action_logits, batch_actions)
     return loss, accuracy
 
 
@@ -100,11 +125,12 @@ def train_epoch(state, batches, rng, n_batches, desc="Training"):
     total_loss = 0.0
     total_acc = 0.0
 
-    for batch_states, batch_actions in tqdm(batches, desc=desc, leave=False, total=n_batches):
+    for batch_data in tqdm(batches, desc=desc, leave=False, total=n_batches):
+        batch_states, batch_actions, batch_reasoning = batch_data
         # Split RNG for this batch
         rng, dropout_rng = jax.random.split(rng)
 
-        state, loss, acc = train_step(state, batch_states, batch_actions, dropout_rng)
+        state, loss, acc = train_step(state, batch_states, batch_actions, dropout_rng, batch_reasoning)
 
         # Block until ready for accurate metrics
         loss = loss.block_until_ready()
@@ -121,8 +147,9 @@ def evaluate(state, batches, n_batches, desc="Validation"):
     total_loss = 0.0
     total_acc = 0.0
 
-    for batch_states, batch_actions in tqdm(batches, desc=desc, leave=False, total=n_batches):
-        loss, acc = eval_step(state.params, state.apply_fn, batch_states, batch_actions)
+    for batch_data in tqdm(batches, desc=desc, leave=False, total=n_batches):
+        batch_states, batch_actions, batch_reasoning = batch_data
+        loss, acc = eval_step(state.params, state.apply_fn, batch_states, batch_actions, batch_reasoning)
 
         loss = loss.block_until_ready()
         acc = acc.block_until_ready()
@@ -192,7 +219,14 @@ def main():
     print()
 
     # Load dataset
-    states, actions = load_dataset(args.dataset)
+    states, actions, reasoning_tokens = load_dataset(args.dataset)
+    use_reasoning = reasoning_tokens is not None
+    
+    if use_reasoning:
+        print("🧠 REASONING SNAKE MODEL (RSM) MODE DETECTED")
+        print(f"   Reasoning sequence length: {reasoning_tokens.shape[1]}")
+        print()
+    
     if args.bf16:
         print("Casting states to bfloat16 for training...")
         states = states.astype(jnp.bfloat16)
@@ -206,6 +240,13 @@ def main():
     train_actions = actions[:n_train]
     val_states = states[n_train:]
     val_actions = actions[n_train:]
+    
+    if use_reasoning:
+        train_reasoning = reasoning_tokens[:n_train]
+        val_reasoning = reasoning_tokens[n_train:]
+    else:
+        train_reasoning = None
+        val_reasoning = None
 
     print(f"\nDataset split:")
     print(f"  Training samples: {n_train}")
@@ -227,6 +268,7 @@ def main():
         dropout_rate=args.dropout,
         use_cnn=args.use_cnn,
         cnn_mode=args.cnn_mode,
+        use_reasoning=use_reasoning,
     )
 
     # Initialize parameters
@@ -236,7 +278,22 @@ def main():
     dummy_input = states[0:1]  # Single sample for initialization
     if args.bf16:
         dummy_input = dummy_input.astype(jnp.bfloat16)
-    params = network.init({"params": init_rng, "dropout": dropout_rng}, dummy_input, training=False)
+    
+    if use_reasoning:
+        dummy_reasoning = reasoning_tokens[0:1]
+        params = network.init(
+            {"params": init_rng, "dropout": dropout_rng}, 
+            dummy_input, 
+            training=False,
+            reasoning_tokens=dummy_reasoning
+        )
+    else:
+        params = network.init(
+            {"params": init_rng, "dropout": dropout_rng}, 
+            dummy_input, 
+            training=False
+        )
+    
     if args.bf16:
         # Cast all parameters to bfloat16
         def cast_tree(tree):
@@ -250,6 +307,8 @@ def main():
     print(f"  CNN: {args.use_cnn}")
     if args.use_cnn:
         print(f"  CNN mode: {args.cnn_mode}")
+    if use_reasoning:
+        print(f"  RSM: Enabled")
     print()
 
     # Calculate total training steps for schedule
@@ -517,10 +576,12 @@ def main():
         # Create shuffled batches
         rng, shuffle_rng = jax.random.split(rng)
         train_batches = create_batches(
-            train_states, train_actions, args.batch_size, shuffle_rng
+            train_states, train_actions, args.batch_size, shuffle_rng, train_reasoning
         )
 
-        val_batches = create_batches(val_states, val_actions, args.batch_size, shuffle_rng)
+        val_batches = create_batches(
+            val_states, val_actions, args.batch_size, shuffle_rng, val_reasoning
+        )
 
         # Train epoch
         state, train_loss, train_acc, rng = train_epoch(
@@ -586,6 +647,7 @@ def main():
                             "dropout": args.dropout,
                             "use_cnn": args.use_cnn,
                             "cnn_mode": args.cnn_mode if args.use_cnn else None,
+                            "use_reasoning": use_reasoning,
                         },
                         "val_accuracy": float(val_acc),
                         "epoch": epoch + 1,
@@ -617,6 +679,7 @@ def main():
                     "dropout": args.dropout,
                     "use_cnn": args.use_cnn,
                     "cnn_mode": args.cnn_mode if args.use_cnn else None,
+                    "use_reasoning": use_reasoning,
                 },
                 "final_val_accuracy": float(val_acc),
                 "epochs": args.epochs,

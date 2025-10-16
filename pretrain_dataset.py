@@ -17,8 +17,10 @@ from pretrain_utils import (
     get_safe_actions,
     state_from_positions,
     augment_state_action,
-    AUGMENTATIONS
+    AUGMENTATIONS,
+    get_positions_from_state
 )
+from reasoning_dsl import generate_reasoning_text, reasoning_to_embeddings
 
 
 def is_valid_snake(
@@ -146,7 +148,10 @@ def generate_pretraining_dataset(
     failure_ratio: float = 0.0,
     epsilon_greedy_ratio: float = 0.0,
     epsilon: float = 0.3,
-    seed: Optional[int] = None
+    seed: Optional[int] = None,
+    add_reasoning: bool = False,
+    reasoning_depth: int = 1,
+    reasoning_format: str = 'compact'
 ) -> List[Dict]:
     """
     Generate pretraining dataset with expert labels and optional failure samples.
@@ -162,9 +167,12 @@ def generate_pretraining_dataset(
         epsilon_greedy_ratio: Ratio of epsilon-greedy samples to include (0.0-1.0)
         epsilon: Epsilon value for epsilon-greedy sampling
         seed: Random seed
+        add_reasoning: Add CoT-style reasoning text before action (RSM mode)
+        reasoning_depth: Lookahead depth for reasoning (1-3)
+        reasoning_format: 'compact' or 'verbose'
     
     Returns:
-        List of dicts with 'state', 'action', 'action_probs', 'metadata'
+        List of dicts with 'state', 'action', 'action_probs', 'metadata', and optionally 'reasoning'
     """
     if seed is not None:
         random.seed(seed)
@@ -219,6 +227,16 @@ def generate_pretraining_dataset(
         # Convert to state array
         state = state_from_positions(snake_positions, food_pos, width, height)
         
+        # Generate reasoning text if requested
+        reasoning_text = None
+        reasoning_tokens = None
+        if add_reasoning:
+            reasoning_text = generate_reasoning_text(
+                snake_positions, food_pos, width, height, expert_action,
+                lookahead_depth=reasoning_depth, format=reasoning_format
+            )
+            reasoning_tokens = reasoning_to_embeddings(reasoning_text, d_model=64, max_length=128)
+        
         # Create base sample
         sample = {
             'state': state,
@@ -231,6 +249,10 @@ def generate_pretraining_dataset(
                 'num_safe_actions': len(safe_actions)
             }
         }
+        
+        if add_reasoning:
+            sample['reasoning'] = reasoning_text
+            sample['reasoning_tokens'] = reasoning_tokens
         
         dataset.append(sample)
         pbar.update(1)
@@ -250,14 +272,9 @@ def generate_pretraining_dataset(
             # Pick a random sample from the dataset
             base_sample = random.choice(dataset)
             
-            # Get safe actions for this state
-            # Extract snake positions from state (reverse of state_from_positions)
+            # Extract snake positions and food from state
             state = base_sample['state']
-            snake_positions = []
-            for y in range(height):
-                for x in range(width):
-                    if state[y, x, 1] > 0:  # Green channel = snake
-                        snake_positions.append((y, x))
+            snake_positions, food_pos = get_positions_from_state(state)
             
             safe_actions = get_safe_actions(snake_positions, width, height)
             if not safe_actions:
@@ -269,12 +286,24 @@ def generate_pretraining_dataset(
             # Create uniform probability distribution
             failure_probs = np.ones(4, dtype=np.float32) / 4.0
             
-            failure_samples.append({
+            failure_sample = {
                 'state': state.copy(),
                 'action': random_action,
                 'action_probs': failure_probs,
                 'metadata': base_sample['metadata'].copy()
-            })
+            }
+            
+            # Generate reasoning for failure samples too (shows wrong reasoning)
+            if add_reasoning:
+                reasoning_text = generate_reasoning_text(
+                    snake_positions, food_pos, width, height, random_action,
+                    lookahead_depth=reasoning_depth, format=reasoning_format
+                )
+                reasoning_tokens = reasoning_to_embeddings(reasoning_text, d_model=64, max_length=128)
+                failure_sample['reasoning'] = reasoning_text
+                failure_sample['reasoning_tokens'] = reasoning_tokens
+            
+            failure_samples.append(failure_sample)
         
         dataset.extend(failure_samples)
         print(f"Dataset size after failures: {len(dataset)}")
@@ -299,12 +328,26 @@ def generate_pretraining_dataset(
                 random_action = base_sample['action']
                 epsilon_probs = base_sample['action_probs'].copy()
             
-            epsilon_samples.append({
+            epsilon_sample = {
                 'state': base_sample['state'].copy(),
                 'action': random_action,
                 'action_probs': epsilon_probs,
                 'metadata': base_sample['metadata'].copy()
-            })
+            }
+            
+            # Generate reasoning for epsilon-greedy samples
+            if add_reasoning:
+                state = base_sample['state']
+                snake_positions, food_pos = get_positions_from_state(state)
+                reasoning_text = generate_reasoning_text(
+                    snake_positions, food_pos, width, height, random_action,
+                    lookahead_depth=reasoning_depth, format=reasoning_format
+                )
+                reasoning_tokens = reasoning_to_embeddings(reasoning_text, d_model=64, max_length=128)
+                epsilon_sample['reasoning'] = reasoning_text
+                epsilon_sample['reasoning_tokens'] = reasoning_tokens
+            
+            epsilon_samples.append(epsilon_sample)
         
         dataset.extend(epsilon_samples)
         print(f"Dataset size after epsilon-greedy: {len(dataset)}")

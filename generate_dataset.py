@@ -33,11 +33,18 @@ def main():
     parser.add_argument('--epsilon', type=float, default=0.3, help='Epsilon value for epsilon-greedy sampling')
     parser.add_argument('--output', type=str, default='snake_pretrain_dataset.pkl', help='Output file path')
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
+    
+    # Reasoning Snake Model (RSM) parameters
+    parser.add_argument('--reasoning', action='store_true', help='Add CoT-style reasoning before actions (RSM mode)')
+    parser.add_argument('--reasoning-depth', type=int, default=1, choices=[1, 2, 3], help='Lookahead depth for reasoning (1-3 steps)')
+    parser.add_argument('--reasoning-format', type=str, default='compact', choices=['compact', 'verbose'], help='Reasoning text format')
 
     args = parser.parse_args()
     
     print("=" * 60)
     print("SNAKE PRETRAINING DATASET GENERATION")
+    if args.reasoning:
+        print("🧠 REASONING SNAKE MODEL (RSM) MODE ENABLED")
     print("=" * 60)
     print(f"\nConfiguration:")
     print(f"  Samples: {args.num_samples:,}")
@@ -49,6 +56,12 @@ def main():
     print(f"  Epsilon-greedy ratio: {args.epsilon_greedy_ratio:.2%} (ε={args.epsilon})")
     print(f"  Seed: {args.seed}")
     print(f"  Output: {args.output}")
+    
+    if args.reasoning:
+        print(f"\n  RSM Parameters:")
+        print(f"    Reasoning: Enabled")
+        print(f"    Lookahead depth: {args.reasoning_depth}")
+        print(f"    Format: {args.reasoning_format}")
     
     if args.augment:
         base_size = args.num_samples * 8
@@ -75,7 +88,10 @@ def main():
         seed=args.seed,
         failure_ratio=args.failure_ratio,
         epsilon_greedy_ratio=args.epsilon_greedy_ratio,
-        epsilon=args.epsilon
+        epsilon=args.epsilon,
+        add_reasoning=args.reasoning,
+        reasoning_depth=args.reasoning_depth,
+        reasoning_format=args.reasoning_format
     )
     
     # Analyze
