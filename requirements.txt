@@ -1,4 +1,5 @@
 gymnasium
+imageio[ffmpeg]
 matplotlib
 git+https://github.com/KellerJordan/Muon
 ninja
