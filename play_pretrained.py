@@ -129,11 +129,23 @@ def play_episode(env, network, params, rng, render=True, delay=0.1, render_mode=
         plt.close()
     if save_video and frames and video_path:
         print(f"Saving video to {video_path}...")
-        # Ensure all frames are the same size
+        # Ensure all frames are the same size and divisible by macro_block_size=16
         import cv2
         target_shape = frames[0].shape
+        # Make width and height divisible by 16
+        def pad_to_16(x):
+            return ((x + 15) // 16) * 16
+        padded_height = pad_to_16(target_shape[0])
+        padded_width = pad_to_16(target_shape[1])
+        padded_shape = (padded_height, padded_width, target_shape[2])
+        def pad_frame(frame):
+            h, w, c = frame.shape
+            pad_h = padded_height - h
+            pad_w = padded_width - w
+            return np.pad(frame, ((0, pad_h), (0, pad_w), (0, 0)), mode='constant', constant_values=255)
         resized_frames = [cv2.resize(frame, (target_shape[1], target_shape[0]), interpolation=cv2.INTER_AREA) if frame.shape != target_shape else frame for frame in frames]
-        imageio.mimsave(video_path, resized_frames, fps=int(1/max(delay, 0.01)))
+        padded_frames = [pad_frame(frame) for frame in resized_frames]
+        imageio.mimsave(video_path, padded_frames, fps=int(1/max(delay, 0.01)), macro_block_size=16)
     print("\n" + "="*50)
     print(f"Episode finished!")
     print(f"  Steps: {steps}")
