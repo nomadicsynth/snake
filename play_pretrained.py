@@ -21,7 +21,7 @@ from snake_jax.env import SnakeEnv
 from snake_jax.network import TransformerPolicy
 
 
-def render_state(state, env_config, mode="graphical", return_frame=False):
+def render_state(state, env_config, mode="graphical", return_frame=False, moves=None):
     """Render the game state in ASCII or graphical mode (default: graphical)
     If return_frame is True, returns the RGB numpy array for video saving."""
     if mode == "ascii":
@@ -64,11 +64,6 @@ def render_state(state, env_config, mode="graphical", return_frame=False):
                     grid[y, x] = [0.0, 0.5, 0.0]  # Body: darker green
         plt.clf()
         plt.imshow(grid, interpolation='nearest')
-        # Add moves/steps to title if available
-        moves = getattr(state, 'steps', None)
-        if moves is None:
-            # Try to infer from state if possible
-            moves = None
         title_str = f"Length: {state.snake_length} | Score: {state.score}"
         if moves is not None:
             title_str += f" | Moves: {moves}"
@@ -109,10 +104,10 @@ def play_episode(env, network, params, rng, render=True, delay=0.1, render_mode=
     while not done and steps < env.config.max_steps:
         frame = None
         if render:
-            frame = render_state(state, env.config, mode=render_mode, return_frame=save_video)
+            frame = render_state(state, env.config, mode=render_mode, return_frame=save_video, moves=steps)
             time.sleep(delay)
         elif save_video:
-            frame = render_state(state, env.config, mode=render_mode, return_frame=True)
+            frame = render_state(state, env.config, mode=render_mode, return_frame=True, moves=steps)
         if save_video and frame is not None:
             frames.append(frame)
         # Get action from policy
