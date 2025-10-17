@@ -12,3 +12,4 @@ torch
 tqdm
 wandb
 wheel
+jax[cuda13]>=0.2.26  # from purejaxrl/requirements.txt, but needs cuda13 version because cuda12 version has incompatibility issues
