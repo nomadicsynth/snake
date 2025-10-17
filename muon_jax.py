@@ -34,6 +34,11 @@ def muon(
     Muon applies orthogonalization to momentum updates using Newton-Schulz iteration,
     which helps maintain orthogonality of weight matrices during training.
 
+    IMPORTANT: This optimizer only works with 2D+ tensors (weight matrices).
+    If your model has mixed parameter types (e.g., weights + biases), use
+    multi_transform_with_muon() instead, which applies Muon to 2D+ params
+    and Adam to 1D params.
+
     Args:
         learning_rate: Learning rate (can be a schedule function)
         momentum: Momentum coefficient (default: 0.95)
@@ -42,6 +47,9 @@ def muon(
 
     Returns:
         An optax GradientTransformation
+        
+    Raises:
+        ValueError: If applied to parameters with dimensions < 2
     """
 
     def newton_schulz_orthogonalize(G, steps=5, eps=1e-7):
@@ -108,41 +116,41 @@ def muon(
         new_momentum = {}
 
         def process_leaf(path, grad, mom, param):
-            # For 2D+ tensors, apply Newton-Schulz orthogonalization and scaling
-            if grad.ndim >= 2:
-                # Update momentum
-                mom_new = momentum * mom + grad
+            # Muon is only for 2D+ tensors (weight matrices)
+            # For mixed parameters, use multi_transform_with_muon() instead
+            if grad.ndim < 2:
+                raise ValueError(
+                    f"Muon optimizer only supports 2D+ tensors (weight matrices). "
+                    f"Got tensor with shape {grad.shape}. "
+                    f"For parameters with mixed dimensions (weights + biases), "
+                    f"use multi_transform_with_muon() instead."
+                )
+            
+            # Update momentum
+            mom_new = momentum * mom + grad
 
-                # Apply Newton-Schulz orthogonalization for weight matrices
-                mom_new = newton_schulz_orthogonalize(mom_new, steps=5)
+            # Apply Newton-Schulz orthogonalization for weight matrices
+            mom_new = newton_schulz_orthogonalize(mom_new, steps=5)
 
-                # Apply Nesterov momentum if requested
-                if nesterov:
-                    upd = momentum * mom_new + grad
-                else:
-                    upd = mom_new
-
-                # Apply scaling factor: 0.2 * sqrt(n), where n = max effective dimension
-                # Use the effective 2D shape after reshaping
-                if grad.ndim == 2:
-                    n = max(grad.shape)
-                elif grad.ndim == 3:
-                    n = max(grad.shape[0], grad.shape[1] * grad.shape[2])
-                elif grad.ndim >= 4:
-                    n = max(grad.size // grad.shape[-1], grad.shape[-1])
-                else:
-                    n = 1
-                    
-                scaling = 0.2 * jnp.sqrt(n)
-                upd = -step_size * (scaling * upd + weight_decay * param)
+            # Apply Nesterov momentum if requested
+            if nesterov:
+                upd = momentum * mom_new + grad
             else:
-                # For 1D tensors (biases, norms), just do standard momentum
-                mom_new = momentum * mom + grad
-                if nesterov:
-                    upd = momentum * mom_new + grad
-                else:
-                    upd = mom_new
-                upd = -step_size * (upd + weight_decay * param)
+                upd = mom_new
+
+            # Apply scaling factor: 0.2 * sqrt(n), where n = max effective dimension
+            # Use the effective 2D shape after reshaping
+            if grad.ndim == 2:
+                n = max(grad.shape)
+            elif grad.ndim == 3:
+                n = max(grad.shape[0], grad.shape[1] * grad.shape[2])
+            elif grad.ndim >= 4:
+                n = max(grad.size // grad.shape[-1], grad.shape[-1])
+            else:
+                n = 1
+                
+            scaling = 0.2 * jnp.sqrt(n)
+            upd = -step_size * (scaling * upd + weight_decay * param)
 
             return upd, mom_new
 
