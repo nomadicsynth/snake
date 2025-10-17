@@ -339,7 +339,7 @@ def main():
     elif args.lr_schedule == "cosine":
         if args.warmup_epochs > 0:
             lr_schedule = optax.warmup_cosine_decay_schedule(
-                init_value=0.0,
+                init_value=args.min_lr,
                 peak_value=args.lr,
                 warmup_steps=warmup_steps,
                 decay_steps=total_steps,
@@ -356,7 +356,7 @@ def main():
             lr_schedule = optax.join_schedules(
                 schedules=[
                     optax.linear_schedule(
-                        init_value=0.0,
+                        init_value=args.min_lr,
                         end_value=args.lr,
                         transition_steps=warmup_steps,
                     ),
@@ -387,14 +387,14 @@ def main():
         elif args.lr_schedule == "cosine":
             if args.warmup_epochs > 0:
                 muon_lr_schedule = optax.warmup_cosine_decay_schedule(
-                    init_value=0.0,
+                    init_value=args.min_muon_lr,
                     peak_value=muon_lr,
                     warmup_steps=warmup_steps,
                     decay_steps=total_steps,
                     end_value=args.min_muon_lr,
                 )
                 aux_lr_schedule = optax.warmup_cosine_decay_schedule(
-                    init_value=0.0,
+                    init_value=args.min_lr,
                     peak_value=aux_lr,
                     warmup_steps=warmup_steps,
                     decay_steps=total_steps,
@@ -416,7 +416,7 @@ def main():
                 muon_lr_schedule = optax.join_schedules(
                     schedules=[
                         optax.linear_schedule(
-                            init_value=0.0,
+                            init_value=args.min_muon_lr,
                             end_value=muon_lr,
                             transition_steps=warmup_steps,
                         ),
@@ -431,7 +431,7 @@ def main():
                 aux_lr_schedule = optax.join_schedules(
                     schedules=[
                         optax.linear_schedule(
-                            init_value=0.0,
+                            init_value=args.min_lr,
                             end_value=aux_lr,
                             transition_steps=warmup_steps,
                         ),
