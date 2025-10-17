@@ -47,7 +47,7 @@ def muon(
 
     Returns:
         An optax GradientTransformation
-        
+
     Raises:
         ValueError: If applied to parameters with dimensions < 2
     """
@@ -125,7 +125,7 @@ def muon(
                     f"For parameters with mixed dimensions (weights + biases), "
                     f"use multi_transform_with_muon() instead."
                 )
-            
+
             # Update momentum
             mom_new = momentum * mom + grad
 
@@ -148,7 +148,7 @@ def muon(
                 n = max(grad.size // grad.shape[-1], grad.shape[-1])
             else:
                 n = 1
-                
+
             scaling = 0.2 * jnp.sqrt(n)
             upd = -step_size * (scaling * upd + weight_decay * param)
 
@@ -235,5 +235,6 @@ def chain_with_muon(
         An optax GradientTransformation that clips gradients then applies Muon/Adam
     """
     return optax.chain(
-        optax.clip_by_global_norm(max_grad_norm), multi_transform_with_muon(muon_lr, aux_lr, momentum, nesterov, weight_decay)
+        optax.clip_by_global_norm(max_grad_norm),
+        multi_transform_with_muon(muon_lr, aux_lr, momentum, nesterov, weight_decay),
     )
