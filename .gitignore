@@ -15,3 +15,4 @@ benchmark_results_*.json
 benchmark_cnn_report_*.md
 benchmark_cnn_results_*.json
 benchmark_run.log
+purejaxrl/
