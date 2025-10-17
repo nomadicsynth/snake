@@ -26,6 +26,7 @@ def muon(
     learning_rate: Union[float, Callable[[int], float]],
     momentum: float = 0.95,
     nesterov: bool = True,
+    weight_decay: float = 0.0,
 ) -> base.GradientTransformation:
     """
     Muon optimizer for 2D+ weight matrices (transformer layers).
@@ -37,6 +38,7 @@ def muon(
         learning_rate: Learning rate (can be a schedule function)
         momentum: Momentum coefficient (default: 0.95)
         nesterov: Whether to use Nesterov momentum (default: True)
+        weight_decay: Weight decay coefficient (default: 0.0)
 
     Returns:
         An optax GradientTransformation
@@ -95,8 +97,6 @@ def muon(
         return MuonState(momentum=momentum, count=jnp.zeros([], jnp.int32))
 
     def update_fn(updates, state, params=None):
-        del params  # Unused
-
         # Get learning rate
         if callable(learning_rate):
             step_size = learning_rate(state.count)
@@ -107,8 +107,8 @@ def muon(
         new_updates = {}
         new_momentum = {}
 
-        def process_leaf(path, grad, mom):
-            # For 2D+ tensors, apply Newton-Schulz orthogonalization
+        def process_leaf(path, grad, mom, param):
+            # For 2D+ tensors, apply Newton-Schulz orthogonalization and scaling
             if grad.ndim >= 2:
                 # Update momentum
                 mom_new = momentum * mom + grad
@@ -122,8 +122,10 @@ def muon(
                 else:
                     upd = mom_new
 
-                # Scale by learning rate
-                upd = -step_size * upd
+                # Apply scaling factor: 0.2 * sqrt(n), where n = number of columns
+                n = grad.shape[-1]
+                scaling = 0.2 * jnp.sqrt(n)
+                upd = -step_size * (scaling * upd + weight_decay * param)
             else:
                 # For 1D tensors (biases, norms), just do standard momentum
                 mom_new = momentum * mom + grad
@@ -131,17 +133,18 @@ def muon(
                     upd = momentum * mom_new + grad
                 else:
                     upd = mom_new
-                upd = -step_size * upd
+                upd = -step_size * (upd + weight_decay * param)
 
             return upd, mom_new
 
         # Process all leaves
         flat_updates = jax.tree_util.tree_leaves_with_path(updates)
         flat_momentum = jax.tree_util.tree_leaves(state.momentum)
+        flat_params = jax.tree_util.tree_leaves(params) if params is not None else [None] * len(flat_updates)
 
         processed = []
-        for (path, grad), mom in zip(flat_updates, flat_momentum):
-            upd, mom_new = process_leaf(path, grad, mom)
+        for (path, grad), mom, param in zip(flat_updates, flat_momentum, flat_params):
+            upd, mom_new = process_leaf(path, grad, mom, param)
             processed.append((upd, mom_new))
 
         # Reconstruct trees
@@ -163,6 +166,7 @@ def multi_transform_with_muon(
     aux_lr,  # Can be float or schedule (callable)
     momentum: float = 0.95,
     nesterov: bool = True,
+    weight_decay: float = 0.0,
 ) -> base.GradientTransformation:
     """
     Create a multi-transform optimizer that applies Muon to weight matrices
@@ -173,6 +177,7 @@ def multi_transform_with_muon(
         aux_lr: Learning rate for Adam (auxiliary parameters). Can be a float or a schedule (callable).
         momentum: Momentum for Muon
         nesterov: Whether to use Nesterov momentum for Muon
+        weight_decay: Weight decay coefficient for Muon
 
     Returns:
         An optax GradientTransformation
@@ -182,7 +187,7 @@ def multi_transform_with_muon(
         """Label params as 'muon' or 'adam' based on dimensionality."""
         return jax.tree_util.tree_map(lambda p: "muon" if p.ndim >= 2 else "adam", params)
 
-    muon_opt = muon(muon_lr, momentum=momentum, nesterov=nesterov)
+    muon_opt = muon(muon_lr, momentum=momentum, nesterov=nesterov, weight_decay=weight_decay)
     adam_opt = optax.adam(aux_lr, eps=1e-5)
 
     return optax.multi_transform({"muon": muon_opt, "adam": adam_opt}, param_labels)
@@ -194,6 +199,7 @@ def chain_with_muon(
     max_grad_norm: float,
     momentum: float = 0.95,
     nesterov: bool = True,
+    weight_decay: float = 0.0,
 ) -> base.GradientTransformation:
     """
     Create a chained optimizer with gradient clipping and Muon/Adam.
@@ -206,10 +212,11 @@ def chain_with_muon(
         max_grad_norm: Maximum gradient norm for clipping
         momentum: Momentum for Muon
         nesterov: Whether to use Nesterov momentum for Muon
+        weight_decay: Weight decay coefficient for Muon
 
     Returns:
         An optax GradientTransformation that clips gradients then applies Muon/Adam
     """
     return optax.chain(
-        optax.clip_by_global_norm(max_grad_norm), multi_transform_with_muon(muon_lr, aux_lr, momentum, nesterov)
+        optax.clip_by_global_norm(max_grad_norm), multi_transform_with_muon(muon_lr, aux_lr, momentum, nesterov, weight_decay)
     )
