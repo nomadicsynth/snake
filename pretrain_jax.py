@@ -209,7 +209,7 @@ def main():
     parser.add_argument("--warmup-epochs", "--warmup_epochs", type=int, default=0,
                         help="Number of warmup epochs for LR schedule (default: 0)")
     parser.add_argument("--min-lr", "--min_lr", type=float, default=0.0,
-                        help="Minimum learning rate for cosine schedule (default: 0.0)")
+                        help="Minimum learning rate for cosine schedule. Set to < 0 to have it automatically set to 0.1 * [lr/muon_lr] (default: 0.0)")
 
     args = parser.parse_args()
 
@@ -230,6 +230,15 @@ def main():
     if args.bf16:
         print("Casting states to bfloat16 for training...")
         states = states.astype(jnp.bfloat16)
+
+    # Set default min_lr if not specified
+    if args.min_lr < 0.0:
+        if args.optimizer == "muon":
+            base_lr = args.muon_lr if args.muon_lr is not None else args.lr
+        else:
+            base_lr = args.lr
+        args.min_lr = 0.1 * base_lr
+        print(f"Setting min_lr to {args.min_lr} (10% of base LR)")
 
     # Split into train/val
     n_samples = len(states)
