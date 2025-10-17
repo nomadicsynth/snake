@@ -391,25 +391,25 @@ def main():
                     peak_value=muon_lr,
                     warmup_steps=warmup_steps,
                     decay_steps=total_steps,
-                    end_value=args.min_lr * (muon_lr / args.lr) if args.lr > 0 else 0.0,
+                    end_value=args.min_muon_lr,
                 )
                 aux_lr_schedule = optax.warmup_cosine_decay_schedule(
                     init_value=0.0,
                     peak_value=aux_lr,
                     warmup_steps=warmup_steps,
                     decay_steps=total_steps,
-                    end_value=args.min_lr * (aux_lr / args.lr) if args.lr > 0 else 0.0,
+                    end_value=args.min_muon_lr,
                 )
             else:
                 muon_lr_schedule = optax.cosine_decay_schedule(
                     init_value=muon_lr,
                     decay_steps=total_steps,
-                    alpha=args.min_lr / args.lr if args.lr > 0 else 0.0,
+                    alpha=args.min_muon_lr / muon_lr if muon_lr > 0 else 0.0,
                 )
                 aux_lr_schedule = optax.cosine_decay_schedule(
                     init_value=aux_lr,
                     decay_steps=total_steps,
-                    alpha=args.min_lr / args.lr if args.lr > 0 else 0.0,
+                    alpha=args.min_muon_lr / aux_lr if aux_lr > 0 else 0.0,
                 )
         elif args.lr_schedule == "linear":
             if args.warmup_epochs > 0:
@@ -422,7 +422,7 @@ def main():
                         ),
                         optax.linear_schedule(
                             init_value=muon_lr,
-                            end_value=args.min_lr * (muon_lr / args.lr) if args.lr > 0 else 0.0,
+                            end_value=args.min_muon_lr,
                             transition_steps=total_steps - warmup_steps,
                         ),
                     ],
@@ -437,7 +437,7 @@ def main():
                         ),
                         optax.linear_schedule(
                             init_value=aux_lr,
-                            end_value=args.min_lr * (aux_lr / args.lr) if args.lr > 0 else 0.0,
+                            end_value=args.min_lr,
                             transition_steps=total_steps - warmup_steps,
                         ),
                     ],
@@ -446,12 +446,12 @@ def main():
             else:
                 muon_lr_schedule = optax.linear_schedule(
                     init_value=muon_lr,
-                    end_value=args.min_lr * (muon_lr / args.lr) if args.lr > 0 else 0.0,
+                    end_value=args.min_muon_lr,
                     transition_steps=total_steps,
                 )
                 aux_lr_schedule = optax.linear_schedule(
                     init_value=aux_lr,
-                    end_value=args.min_lr * (aux_lr / args.lr) if args.lr > 0 else 0.0,
+                    end_value=args.min_lr,
                     transition_steps=total_steps,
                 )
 
