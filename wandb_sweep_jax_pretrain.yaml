@@ -38,13 +38,13 @@ parameters:
   # Muon optimizer parameters (only used when optimizer=muon)
   muon_lr:
     distribution: log_uniform_values
-    min: 0.0001
-    max: 0.002
+    min: 0.0005
+    max: 0.05
   
   muon_aux_lr:
     distribution: log_uniform_values
     min: 0.00001
-    max: 0.001
+    max: 0.0001
   
   min_lr:
     value: -1.0  # Automatically set to 10% of base LR
