@@ -199,6 +199,8 @@ def main():
                         help="Momentum for Muon optimizer (default: 0.95)")
     parser.add_argument("--muon-nesterov", "--muon_nesterov", action="store_true", default=True,
                         help="Use Nesterov momentum for Muon (default: True)")
+    parser.add_argument("--muon-decay", "--muon_decay", type=float, default=0.0,
+                        help="Weight decay for Muon optimizer (default: 0.0)")
     parser.add_argument("--max-grad-norm", "--max_grad_norm", type=float, default=1.0,
                         help="Maximum gradient norm for clipping (default: 1.0)")
 
@@ -456,10 +458,12 @@ def main():
             max_grad_norm=args.max_grad_norm,
             momentum=args.muon_momentum,
             nesterov=args.muon_nesterov,
+            weight_decay=args.muon_decay,
         )
         print(f"Optimizer: Muon")
         print(f"  Momentum: {args.muon_momentum}")
         print(f"  Nesterov: {args.muon_nesterov}")
+        print(f"  Weight decay: {args.muon_decay}")
         print(f"  Grad clip: {args.max_grad_norm}")
 
         # Store both schedules for logging
@@ -565,6 +569,7 @@ def main():
                     "muon_aux_lr": args.muon_aux_lr if args.muon_aux_lr is not None else args.lr,
                     "muon_momentum": args.muon_momentum,
                     "muon_nesterov": args.muon_nesterov,
+                    "muon_decay": args.muon_decay,
                 }
             )
         print(f"📊 WandB initialized: {wandb.run.url}")
