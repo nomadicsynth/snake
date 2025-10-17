@@ -17,7 +17,7 @@ early_terminate:
 parameters:
   # Training settings
   epochs:
-    value: 30
+    value: 15
   
   batch_size:
     value: 256
@@ -39,17 +39,20 @@ parameters:
   muon_lr:
     distribution: log_uniform_values
     min: 0.0001
-    max: 0.002
+    max: 0.08
   
   muon_aux_lr:
     distribution: log_uniform_values
-    min: 0.0001
+    min: 0.00001
     max: 0.001
   
   muon_momentum:
-    distribution: uniform
-    min: 0.90
-    max: 0.99
+    value: 0.95
+
+  muon_decay:
+    distribution: log_uniform_values
+    min: 0.01
+    max: 0.03
   
   max_grad_norm:
     value: 1.0
@@ -57,30 +60,34 @@ parameters:
   # Learning rate schedule
   lr_schedule:
     # values: [constant, cosine, linear]
-    values: [cosine, linear]
+    # values: [cosine, linear]
+    value: cosine
   
   warmup_epochs:
-    values: [5, 10]
-  
-  min_lr:
-    distribution: log_uniform_values
-    min: 0.0000001
-    max: 0.000001
+    # values: [5, 10]
+    value: 5
+
+  # min_lr:
+  #   distribution: log_uniform_values
+  #   min: 0.0000001
+  #   max: 0.000001
   
   # Network architecture
   d_model:
-    values: [64, 128, 256]
-  
+    # values: [64, 128, 256]
+    value: 128
+
   num_layers:
-    values: [2, 3, 4]
-  
+    value: 3
+
   num_heads:
-    values: [2, 4, 8]
-  
+    value: 4
+
   dropout:
-    distribution: uniform
-    min: 0.01
-    max: 0.2
+    # distribution: uniform
+    # min: 0.01
+    # max: 0.2
+    value: 0.03
   
   # CNN encoder options
   cnn_mode:
@@ -93,11 +100,11 @@ parameters:
   
   # Dataset
   dataset:
-    value: snake_pretrain_dataset_mixed.pkl
+    value: snake_pretrain_dataset_mixed_sweep_10000.pkl
   
   # Misc settings
   seed:
-    values: [42, 69, 420, 1337]
+    value: 42
   
   save_dir:
     value: pretrain_models/sweep
