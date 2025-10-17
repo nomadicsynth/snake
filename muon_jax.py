@@ -122,8 +122,17 @@ def muon(
                 else:
                     upd = mom_new
 
-                # Apply scaling factor: 0.2 * sqrt(n), where n = number of columns
-                n = grad.shape[-1]
+                # Apply scaling factor: 0.2 * sqrt(n), where n = max effective dimension
+                # Use the effective 2D shape after reshaping
+                if grad.ndim == 2:
+                    n = max(grad.shape)
+                elif grad.ndim == 3:
+                    n = max(grad.shape[0], grad.shape[1] * grad.shape[2])
+                elif grad.ndim >= 4:
+                    n = max(grad.size // grad.shape[-1], grad.shape[-1])
+                else:
+                    n = 1
+                    
                 scaling = 0.2 * jnp.sqrt(n)
                 upd = -step_size * (scaling * upd + weight_decay * param)
             else:
