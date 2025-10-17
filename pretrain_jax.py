@@ -191,8 +191,8 @@ def main():
     # Optimizer options
     parser.add_argument("--optimizer", type=str, default="adam", choices=["adam", "muon"],
                         help="Optimizer to use (default: adam)")
-    parser.add_argument("--muon-lr", "--muon_lr", type=float, default=None,
-                        help="Learning rate for Muon optimizer on weight matrices (uses --lr if not specified)")
+    parser.add_argument("--muon-lr", "--muon_lr", type=float, default=0.01,
+                        help="Learning rate for Muon optimizer on weight matrices")
     parser.add_argument("--muon-aux-lr", "--muon_aux_lr", type=float, default=None,
                         help="Learning rate for Adam on auxiliary params when using Muon (uses --lr if not specified)")
     parser.add_argument("--muon-momentum", "--muon_momentum", type=float, default=0.95,
@@ -211,7 +211,9 @@ def main():
     parser.add_argument("--warmup-epochs", "--warmup_epochs", type=int, default=0,
                         help="Number of warmup epochs for LR schedule (default: 0)")
     parser.add_argument("--min-lr", "--min_lr", type=float, default=0.0,
-                        help="Minimum learning rate for cosine schedule. Set to < 0 to have it automatically set to 0.1 * [lr/muon_lr] (default: 0.0)")
+                        help="Minimum learning rate for cosine schedule. Set to < 0 to have it automatically set to 0.1 * lr (default: 0.0)")
+    parser.add_argument("--min-muon-lr", "--min_muon_lr", type=float, default=-1.0,
+                        help="Minimum learning rate for Muon optimizer when using cosine schedule. Set to < 0 to have it automatically set to 0.1 * muon_lr (default: -1.0)")
 
     args = parser.parse_args()
 
@@ -223,24 +225,15 @@ def main():
     # Load dataset
     states, actions, reasoning_tokens = load_dataset(args.dataset)
     use_reasoning = reasoning_tokens is not None
-    
+
     if use_reasoning:
         print("🧠 REASONING SNAKE MODEL (RSM) MODE DETECTED")
         print(f"   Reasoning sequence length: {reasoning_tokens.shape[1]}")
         print()
-    
+
     if args.bf16:
         print("Casting states to bfloat16 for training...")
         states = states.astype(jnp.bfloat16)
-
-    # Set default min_lr if not specified
-    if args.min_lr < 0.0:
-        if args.optimizer == "muon":
-            base_lr = args.muon_lr if args.muon_lr is not None else args.lr
-        else:
-            base_lr = args.lr
-        args.min_lr = 0.1 * base_lr
-        print(f"Setting min_lr to {args.min_lr} (10% of base LR)")
 
     # Split into train/val
     n_samples = len(states)
@@ -251,7 +244,7 @@ def main():
     train_actions = actions[:n_train]
     val_states = states[n_train:]
     val_actions = actions[n_train:]
-    
+
     if use_reasoning:
         train_reasoning = reasoning_tokens[:n_train]
         val_reasoning = reasoning_tokens[n_train:]
@@ -289,7 +282,7 @@ def main():
     dummy_input = states[0:1]  # Single sample for initialization
     if args.bf16:
         dummy_input = dummy_input.astype(jnp.bfloat16)
-    
+
     if use_reasoning:
         dummy_reasoning = reasoning_tokens[0:1]
         params = network.init(
@@ -304,7 +297,7 @@ def main():
             dummy_input, 
             training=False
         )
-    
+
     if args.bf16:
         # Cast all parameters to bfloat16
         def cast_tree(tree):
@@ -326,6 +319,19 @@ def main():
     n_batches_per_epoch = n_train // args.batch_size
     total_steps = n_batches_per_epoch * args.epochs
     warmup_steps = n_batches_per_epoch * args.warmup_epochs
+
+    # Set minimum learning rates if negative
+    if args.min_lr < 0.0:
+        if args.optimizer == "muon" and args.muon_aux_lr is not None:
+            base_lr = args.muon_aux_lr
+        else:
+            base_lr = args.lr
+        args.min_lr = 0.1 * base_lr
+        print(f"Setting min_lr to {args.min_lr} (10% of base LR)")
+
+    if args.min_muon_lr < 0.0:
+        args.min_muon_lr = 0.1 * args.muon_lr
+        print(f"Setting min_muon_lr to {args.min_muon_lr} (10% of muon_lr)")
 
     # Create learning rate schedule
     if args.lr_schedule == "constant":
