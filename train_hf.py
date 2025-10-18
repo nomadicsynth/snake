@@ -178,78 +178,50 @@ def main():
                         help="Path to HuggingFace dataset directory")
     
     # Model architecture
-    parser.add_argument("--d-model", type=int, default=64, 
-                        help="Transformer dimension")
-    parser.add_argument("--num-layers", type=int, default=2, 
-                        help="Number of transformer layers")
-    parser.add_argument("--num-heads", type=int, default=4, 
-                        help="Number of attention heads")
-    parser.add_argument("--dropout", type=float, default=0.1, 
-                        help="Dropout rate")
-    parser.add_argument("--use-cnn", action="store_true", 
-                        help="Use CNN encoder")
-    parser.add_argument("--cnn-mode", type=str, default="replace", 
-                        choices=["replace", "append"],
+    parser.add_argument("--d-model", type=int, default=128, help="Transformer dimension")
+    parser.add_argument("--num-layers", type=int, default=3, help="Number of transformer layers")
+    parser.add_argument("--num-heads", type=int, default=4, help="Number of attention heads")
+    parser.add_argument("--dropout", type=float, default=0.1, help="Dropout rate")
+    parser.add_argument("--use-cnn", action="store_true", default=True, help="Use CNN encoder")
+    parser.add_argument("--cnn-mode", type=str, default="append", choices=["replace", "append"],
                         help="CNN mode: replace grid tokens or append")
     
     # Training
-    parser.add_argument("--output-dir", type=str, default="snake_hf_output",
+    parser.add_argument("--output-dir", type=str, default="outputs/models/snake_hf_output",
                         help="Output directory for checkpoints")
-    parser.add_argument("--epochs", type=int, default=20, 
-                        help="Number of training epochs")
-    parser.add_argument("--batch-size", type=int, default=256, 
-                        help="Training batch size")
-    parser.add_argument("--eval-batch-size", type=int, default=512,
-                        help="Evaluation batch size")
-    parser.add_argument("--lr", type=float, default=1e-3, 
-                        help="Learning rate")
-    parser.add_argument("--weight-decay", type=float, default=0.0,
-                        help="Weight decay")
+    parser.add_argument("--epochs", type=int, default=20, help="Number of training epochs")
+    parser.add_argument("--batch-size", type=int, default=256, help="Training batch size")
+    parser.add_argument("--eval-batch-size", type=int, default=512, help="Evaluation batch size")
+    parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
+    parser.add_argument("--weight-decay", type=float, default=0.0, help="Weight decay")
     parser.add_argument("--warmup-ratio", type=float, default=0.0,
                         help="Warmup ratio (fraction of total steps)")
-    parser.add_argument("--lr-scheduler", type=str, default="linear",
+    parser.add_argument("--lr-scheduler", type=str, default="cosine",
                         choices=["linear", "cosine", "constant"],
                         help="Learning rate scheduler")
-    parser.add_argument("--gradient-accumulation-steps", type=int, default=1,
-                        help="Gradient accumulation steps")
-    parser.add_argument("--max-grad-norm", type=float, default=1.0,
-                        help="Max gradient norm for clipping")
+    parser.add_argument("--gradient-accumulation-steps", type=int, default=1, help="Gradient accumulation steps")
+    parser.add_argument("--max-grad-norm", type=float, default=1.0, help="Max gradient norm for clipping")
     
     # Optimizer
-    parser.add_argument("--optimizer", type=str, default="adamw",
-                        choices=["adamw", "muon"],
-                        help="Optimizer to use")
-    parser.add_argument("--muon-lr", type=float, default=0.01,
-                        help="Learning rate for Muon optimizer")
-    parser.add_argument("--muon-momentum", type=float, default=0.95,
-                        help="Momentum for Muon")
-    
+    parser.add_argument("--optimizer", type=str, default="muon", choices=["adamw", "muon"], help="Optimizer to use")
+    parser.add_argument("--muon-lr", type=float, default=0.01, help="Learning rate for Muon optimizer")
+    parser.add_argument("--muon-momentum", type=float, default=0.95, help="Momentum for Muon")
+
     # Logging and saving
-    parser.add_argument("--wandb", action="store_true", 
-                        help="Use Weights & Biases logging")
-    parser.add_argument("--wandb-project", type=str, default="snake-hf",
-                        help="W&B project name")
-    parser.add_argument("--run-name", type=str, default=None,
-                        help="Run name for logging")
-    parser.add_argument("--logging-steps", type=int, default=50,
-                        help="Log every N steps")
-    parser.add_argument("--eval-steps", type=int, default=500,
-                        help="Evaluate every N steps")
-    parser.add_argument("--save-steps", type=int, default=500,
-                        help="Save checkpoint every N steps")
-    parser.add_argument("--save-total-limit", type=int, default=3,
-                        help="Maximum number of checkpoints to keep")
-    
+    parser.add_argument("--wandb", action="store_true", help="Use Weights & Biases logging")
+    parser.add_argument("--wandb-project", type=str, default="snake-hf", help="W&B project name")
+    parser.add_argument("--run-name", type=str, default=None, help="Run name for logging")
+    parser.add_argument("--logging-steps", type=int, default=50, help="Log every N steps")
+    parser.add_argument("--eval-steps", type=int, default=500, help="Evaluate every N steps")
+    parser.add_argument("--save-steps", type=int, default=500, help="Save checkpoint every N steps")
+    parser.add_argument("--save-total-limit", type=int, default=3, help="Maximum number of checkpoints to keep")
+
     # Other
-    parser.add_argument("--seed", type=int, default=42, 
-                        help="Random seed")
-    parser.add_argument("--fp16", action="store_true",
-                        help="Use mixed precision training")
-    parser.add_argument("--bf16", action="store_true",
-                        help="Use bfloat16 precision")
-    parser.add_argument("--resume", type=str, default=None,
-                        help="Resume from checkpoint path")
-    
+    parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument("--fp16", action="store_true", help="Use mixed precision training")
+    parser.add_argument("--bf16", action="store_true", default=True, help="Use bfloat16 precision")
+    parser.add_argument("--resume", type=str, default=None, help="Resume from checkpoint path")
+
     args = parser.parse_args()
     
     print("=" * 70)
