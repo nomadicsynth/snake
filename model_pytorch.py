@@ -135,7 +135,10 @@ class TransformerPolicy(PreTrainedModel):
         # Grid encoding
         self.pos_encoding = PositionalEncoding2D(config.d_model)
 
-        # Input projection (3 channels: empty, snake, food)
+        # Input projection (3 channels: empty, snake, food) - always needed for grid tokens
+        self.input_proj = nn.Linear(3, config.d_model)
+
+        # CNN components (if enabled)
         if config.use_cnn:
             self.cnn = CNNEncoder(in_channels=3, features=(32, 64))
             cnn_out_channels = 64
@@ -145,8 +148,6 @@ class TransformerPolicy(PreTrainedModel):
                 # Will concatenate CNN features with grid tokens
                 pass
             # else mode == "replace": CNN replaces grid embeddings
-        else:
-            self.input_proj = nn.Linear(3, config.d_model)
 
         # Reasoning token embeddings (if RSM mode)
         if config.use_reasoning:
