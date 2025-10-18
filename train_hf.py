@@ -24,18 +24,6 @@ import wandb
 
 from model_pytorch import TransformerPolicy, SnakeTransformerConfig
 
-try:
-    from muon import Muon
-    try:
-        from muon import MuonWithAuxAdam
-        MUON_AUX_AVAILABLE = True
-    except ImportError:
-        MUON_AUX_AVAILABLE = False
-    MUON_AVAILABLE = True
-except ImportError:
-    MUON_AVAILABLE = False
-    MUON_AUX_AVAILABLE = False
-
 
 class SnakeDataCollator:
     """Custom collator for Snake dataset"""
@@ -223,6 +211,15 @@ def main():
 
     args = parser.parse_args()
     
+    use_muon = args.optimizer == "muon"
+    if use_muon:
+        try:
+            from muon import MuonWithAuxAdam
+        except ImportError:
+            print("⚠️  Muon optimizer requested but MuonWithAuxAdam not available!")
+            print("    Install with: pip install git+https://github.com/KellerJordan/Muon")
+            raise ImportError("MuonWithAuxAdam is required for muon optimizer")
+    
     print("=" * 70)
     print("SNAKE TRANSFORMER TRAINING (HuggingFace)")
     print("=" * 70)
@@ -284,27 +281,20 @@ def main():
     # Optimizer configuration
     use_muon = args.optimizer == "muon"
     if use_muon:
-        if not MUON_AVAILABLE:
-            print("⚠️  Muon optimizer requested but not installed!")
-            print("    Install with: pip install git+https://github.com/KellerJordan/Muon")
-            print("    Falling back to AdamW")
-            print()
-            use_muon = False
-        else:
-            # Initialize distributed for Muon (single process)
-            if not dist.is_initialized():
-                os.environ['MASTER_ADDR'] = 'localhost'
-                os.environ['MASTER_PORT'] = '12355'
-                os.environ['RANK'] = '0'
-                os.environ['WORLD_SIZE'] = '1'
-                dist.init_process_group(backend='gloo', rank=0, world_size=1)
-            
-            print(f"✅ Using Muon optimizer")
-            print(f"   LR: {args.muon_lr}")
-            print(f"   Momentum: {args.muon_momentum}")
-            print()
-            # Override learning rate for Muon
-            effective_lr = args.muon_lr
+        # Initialize distributed for Muon (single process)
+        if not dist.is_initialized():
+            os.environ['MASTER_ADDR'] = 'localhost'
+            os.environ['MASTER_PORT'] = '12355'
+            os.environ['RANK'] = '0'
+            os.environ['WORLD_SIZE'] = '1'
+            dist.init_process_group(backend='gloo', rank=0, world_size=1)
+        
+        print(f"✅ Using Muon optimizer")
+        print(f"   LR: {args.muon_lr}")
+        print(f"   Momentum: {args.muon_momentum}")
+        print()
+        # Override learning rate for Muon
+        effective_lr = args.muon_lr
     
     if not use_muon:
         effective_lr = args.lr
@@ -350,7 +340,7 @@ def main():
     # Create custom optimizer using Muon pattern from reference implementation
     optimizers = (None, None)
     if use_muon:
-        if MUON_AUX_AVAILABLE:
+        if use_muon:
             # Use MuonWithAuxAdam for proper handling of 2D+ params with Muon and 1D params with AdamW
             muon_params = []
             aux_params = []
@@ -384,14 +374,6 @@ def main():
                 optimizer = MuonWithAuxAdam(param_groups)
                 optimizers = (optimizer, None)
                 print(f"   MuonWithAuxAdam: {len(muon_params)} weight params, {len(aux_params)} aux params")
-        else:
-            print("⚠️  MuonWithAuxAdam not available, using basic Muon (2D params only)")
-            # Fallback to basic Muon for 2D params only
-            muon_params = [p for p in model.parameters() if p.requires_grad and p.ndim >= 2]
-            if len(muon_params) > 0:
-                optimizer = Muon(muon_params, lr=args.muon_lr, momentum=args.muon_momentum)
-                optimizers = (optimizer, None)
-                print(f"   Muon: {len(muon_params)} params (2D only, 1D params not optimized!)")
     
     # Initialize W&B if requested
     if args.wandb:
