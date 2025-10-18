@@ -18,7 +18,6 @@ from transformers import (
     Trainer,
     TrainingArguments,
     TrainerCallback,
-    EarlyStoppingCallback,
 )
 from transformers.trainer_utils import get_last_checkpoint
 import wandb
