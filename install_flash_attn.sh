@@ -22,4 +22,3 @@ pip install flash-attn --no-build-isolation --use-pep517
 echo ""
 echo "✓ flash-attn installed successfully!"
 echo ""
-echo "PyTorch 2.0+ will automatically use FlashAttention when available."
