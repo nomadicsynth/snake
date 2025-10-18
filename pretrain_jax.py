@@ -496,8 +496,8 @@ def main():
             print(f"  Muon LR (weights): {muon_lr} (constant)")
             print(f"  Adam LR (aux):     {aux_lr} (constant)")
         elif args.lr_schedule == "cosine":
-            muon_end_lr = args.min_lr * (muon_lr / args.lr) if args.lr > 0 else 0.0
-            aux_end_lr = args.min_lr * (aux_lr / args.lr) if args.lr > 0 else 0.0
+            muon_end_lr = args.min_muon_lr
+            aux_end_lr = args.min_lr
             if args.warmup_epochs > 0:
                 print(
                     f"  Muon LR (weights): 0.0 -> {muon_lr} -> {muon_end_lr:.2e} (cosine, {args.warmup_epochs} warmup epochs)"
@@ -509,8 +509,8 @@ def main():
                 print(f"  Muon LR (weights): {muon_lr} -> {muon_end_lr:.2e} (cosine)")
                 print(f"  Adam LR (aux):     {aux_lr} -> {aux_end_lr:.2e} (cosine)")
         elif args.lr_schedule == "linear":
-            muon_end_lr = args.min_lr * (muon_lr / args.lr) if args.lr > 0 else 0.0
-            aux_end_lr = args.min_lr * (aux_lr / args.lr) if args.lr > 0 else 0.0
+            muon_end_lr = args.min_muon_lr
+            aux_end_lr = args.min_lr
             if args.warmup_epochs > 0:
                 print(
                     f"  Muon LR (weights): 0.0 -> {muon_lr} -> {muon_end_lr:.2e} (linear, {args.warmup_epochs} warmup epochs)"
