@@ -22,7 +22,7 @@ from transformers import (
 from transformers.trainer_utils import get_last_checkpoint
 import wandb
 
-from model_pytorch import TransformerPolicy, SnakeTransformerConfig
+from model.model_pytorch import TransformerPolicy, SnakeTransformerConfig
 
 
 class SnakeDataCollator:
