@@ -12,3 +12,9 @@ torch
 tqdm
 wandb
 wheel
+
+# HuggingFace ecosystem
+transformers
+datasets
+accelerate
+evaluate
