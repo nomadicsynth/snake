@@ -135,7 +135,7 @@ class TransformerPolicy(PreTrainedModel):
         # Grid encoding
         self.pos_encoding = PositionalEncoding2D(config.d_model)
 
-        # Input projection (3 channels: empty, snake, food) - always needed for grid tokens
+        # Input projection (3 RGB channels: R=food, G=snake, B=empty) - always needed for grid tokens
         self.input_proj = nn.Linear(3, config.d_model)
 
         # CNN components (if enabled)
