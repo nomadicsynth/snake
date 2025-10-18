@@ -340,40 +340,85 @@ def main():
     # Create custom optimizer using Muon pattern from reference implementation
     optimizers = (None, None)
     if use_muon:
-        if use_muon:
-            # Use MuonWithAuxAdam for proper handling of 2D+ params with Muon and 1D params with AdamW
-            muon_params = []
-            aux_params = []
-            
-            for name, p in model.named_parameters():
-                if p.requires_grad:
-                    if p.ndim >= 2:
-                        muon_params.append(p)
-                    else:
-                        aux_params.append(p)
-            
-            param_groups = []
-            if len(muon_params) > 0:
-                param_groups.append({
-                    'params': muon_params,
-                    'use_muon': True,
-                    'lr': args.muon_lr,
-                    'weight_decay': args.weight_decay,
-                })
-            
-            if len(aux_params) > 0:
-                param_groups.append({
-                    'params': aux_params,
-                    'use_muon': False,
-                    'lr': args.lr,  # Use regular LR for aux params
-                    'betas': (0.9, 0.95),
-                    'weight_decay': args.weight_decay,
-                })
-            
-            if len(param_groups) > 0:
-                optimizer = MuonWithAuxAdam(param_groups)
-                optimizers = (optimizer, None)
-                print(f"   MuonWithAuxAdam: {len(muon_params)} weight params, {len(aux_params)} aux params")
+        # Build parameter groups similar to the reference:
+        # - hidden_weights: 2D weight parameters from the model "body" (transformer + CNN) -> use_muon=True
+        # - hidden_gains_biases + nonhidden_params: 1D params from body + head/embed parameters -> use_muon=False
+        # We map our model modules to those concepts: transformer and CNN (and cnn_proj/input_proj) are the "body",
+        # action_head/reasoning_head and reasoning embeddings are treated as head/embed respectively.
+
+        body_modules = []
+        if hasattr(model, 'transformer'):
+            body_modules.append(model.transformer)
+        if hasattr(model, 'cnn'):
+            body_modules.append(model.cnn)
+        if hasattr(model, 'cnn_proj'):
+            body_modules.append(model.cnn_proj)
+        if hasattr(model, 'input_proj'):
+            body_modules.append(model.input_proj)
+
+        hidden_weights = []
+        hidden_gains_biases = []
+
+        for mod in body_modules:
+            for p in mod.parameters():
+                if not p.requires_grad:
+                    continue
+                if p.ndim >= 2:
+                    hidden_weights.append(p)
+                else:
+                    hidden_gains_biases.append(p)
+
+        # Non-hidden params: heads and embedding layers
+        nonhidden_params = []
+        for name in ('action_head', 'reasoning_head', 'reasoning_embed', 'reasoning_pos'):
+            if hasattr(model, name):
+                nonhidden_params.extend([p for p in getattr(model, name).parameters() if p.requires_grad])
+
+        # Deduplicate parameters (a parameter can be referenced in multiple lists through shared modules)
+        def unique_params(param_list):
+            seen = set()
+            uniq = []
+            for p in param_list:
+                if id(p) in seen:
+                    continue
+                seen.add(id(p))
+                uniq.append(p)
+            return uniq
+
+        hidden_weights = unique_params(hidden_weights)
+        hidden_gains_biases = unique_params(hidden_gains_biases)
+        nonhidden_params = unique_params(nonhidden_params)
+
+        # Fallback: if some trainable params were not captured (rare), put them into the aux group
+        captured = set([id(p) for p in hidden_weights + hidden_gains_biases + nonhidden_params])
+        other_params = [p for p in model.parameters() if p.requires_grad and id(p) not in captured]
+
+        # Compose final param groups
+        param_groups = []
+        if len(hidden_weights) > 0:
+            param_groups.append({
+                'params': hidden_weights,
+                'use_muon': True,
+                'lr': args.muon_lr,
+                'weight_decay': args.weight_decay,
+            })
+
+        aux_group_params = hidden_gains_biases + nonhidden_params + other_params
+        if len(aux_group_params) > 0:
+            param_groups.append({
+                'params': aux_group_params,
+                'use_muon': False,
+                'lr': args.lr,
+                'betas': (0.9, 0.95),
+                'weight_decay': args.weight_decay,
+            })
+
+        if len(param_groups) > 0:
+            optimizer = MuonWithAuxAdam(param_groups)
+            optimizers = (optimizer, None)
+            n_muon = sum(p.numel() for g in param_groups if g.get('use_muon') for p in g['params'])
+            n_aux = sum(p.numel() for g in param_groups if not g.get('use_muon') for p in g['params'])
+            print(f"   MuonWithAuxAdam: {n_muon:,} muon params, {n_aux:,} aux params")
     
     # Initialize W&B if requested
     if args.wandb:
