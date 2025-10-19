@@ -5,6 +5,7 @@ This implements a world model for the Snake game using **Equilibrium Matching** 
 ## Key Idea
 
 Unlike traditional approaches that separately predict:
+
 1. Next state given (current_state, action)
 2. Action given current_state
 
@@ -12,7 +13,7 @@ EqM learns a **time-invariant gradient field** that jointly optimizes both the n
 
 ## Architecture
 
-```
+```text
 Current State (grid_t)
     ↓
 Encoder (Transformer + optional CNN)
@@ -114,6 +115,7 @@ python train_snake_world.py \
 ### 3. Key Hyperparameters
 
 **Encoder:**
+
 - `--d-model`: Transformer dimension (default: 128)
 - `--num-layers`: Transformer depth (default: 3)
 - `--num-heads`: Attention heads (default: 4)
@@ -121,15 +123,18 @@ python train_snake_world.py \
 - `--cnn-mode`: "replace" or "append"
 
 **EqM Architecture:**
+
 - `--latent-dim`: Dimension of latent next-state (default: 64)
 - `--eqm-hidden-dim`: Hidden dim of gradient network (default: 128)
 - `--eqm-num-layers`: Depth of gradient network (default: 3)
 
 **EqM Training:**
+
 - `--gradient-schedule`: "linear", "truncated", or "piecewise"
 - `--gradient-multiplier`: Overall gradient scale λ (default: 1.0)
 
 **EqM Sampling:**
+
 - `--eqm-sampling-steps`: Number of GD steps (default: 10)
 - `--eqm-step-size`: Learning rate for GD (default: 0.1)
 - `--eqm-nag-momentum`: Nesterov momentum (default: 0.9)
@@ -193,6 +198,7 @@ Runqian Wang, Yilun Du
 *arXiv preprint, 2024*
 
 Key concepts:
+
 - Time-invariant gradient field (vs. flow matching's time-varying velocity)
 - Energy landscape with data manifold as stationary points
 - Gradient descent sampling with adaptive compute

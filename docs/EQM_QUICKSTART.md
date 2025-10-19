@@ -3,6 +3,7 @@
 ## What is this?
 
 A world model for Snake that uses **Equilibrium Matching** to jointly predict:
+
 - The next game state (after taking an action)
 - The action to reach that state
 
@@ -10,7 +11,8 @@ Unlike traditional approaches, EqM learns an energy landscape where (state, acti
 
 ## Setup
 
-1. **Generate a world model dataset** (includes next_state):
+### 1. **Generate a world model dataset** (includes next_state)
+
 ```bash
 python generate_world_model_dataset.py \
   --num-samples 10000 \
@@ -18,7 +20,8 @@ python generate_world_model_dataset.py \
   --use-astar
 ```
 
-2. **Train the EqM world model**:
+### 2. **Train the EqM world model**
+
 ```bash
 python train_snake_world.py \
   --dataset outputs/datasets/snake_world_test/ \
@@ -31,7 +34,7 @@ python train_snake_world.py \
 
 ## How It Works
 
-```
+```text
 Grid → Encoder → Hidden State → EqM Gradient Field
                                         ↓
                             Optimize (next_state, action) via GD
