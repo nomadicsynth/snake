@@ -193,6 +193,8 @@ def main():
     parser.add_argument("--optimizer", type=str, default="muon", choices=["adamw", "muon"], help="Optimizer to use")
     parser.add_argument("--muon-lr", type=float, default=0.01, help="Learning rate for Muon optimizer")
     parser.add_argument("--muon-momentum", type=float, default=0.95, help="Momentum for Muon")
+    parser.add_argument("--muon-first-cnn-layer", action="store_true", default=False,
+                        help="Use Muon for first CNN layer (default: False, uses Adam instead)")
 
     # Logging and saving
     parser.add_argument("--wandb", action="store_true", help="Use Weights & Biases logging")
@@ -345,12 +347,13 @@ def main():
         # - hidden_gains_biases + nonhidden_params: 1D params from body + head/embed parameters -> use_muon=False
         # We map our model modules to those concepts: transformer and CNN (and cnn_proj/input_proj) are the "body",
         # action_head/reasoning_head and reasoning embeddings are treated as head/embed respectively.
+        # 
+        # Per Muon README: "for a ConvNet, you should use Muon to optimize all the convolutional 
+        # filters except the first one" - so we exclude the first CNN layer from Muon by default.
 
         body_modules = []
         if hasattr(model, 'transformer'):
             body_modules.append(model.transformer)
-        if hasattr(model, 'cnn'):
-            body_modules.append(model.cnn)
         if hasattr(model, 'cnn_proj'):
             body_modules.append(model.cnn_proj)
         if hasattr(model, 'input_proj'):
@@ -358,6 +361,26 @@ def main():
 
         hidden_weights = []
         hidden_gains_biases = []
+
+        # Handle CNN layers specially to exclude first layer from Muon (unless flag is set)
+        first_cnn_layer_params = []
+        if hasattr(model, 'cnn'):
+            cnn_layers = list(model.cnn.conv.children())
+            for idx, layer in enumerate(cnn_layers):
+                if isinstance(layer, nn.Conv2d):
+                    # First Conv2d layer - exclude from Muon by default
+                    if idx == 0 and not args.muon_first_cnn_layer:
+                        first_cnn_layer_params.extend([p for p in layer.parameters() if p.requires_grad])
+                        continue
+                
+                # All other CNN parameters
+                for p in layer.parameters():
+                    if not p.requires_grad:
+                        continue
+                    if p.ndim >= 2:
+                        hidden_weights.append(p)
+                    else:
+                        hidden_gains_biases.append(p)
 
         for mod in body_modules:
             for p in mod.parameters():
@@ -388,9 +411,10 @@ def main():
         hidden_weights = unique_params(hidden_weights)
         hidden_gains_biases = unique_params(hidden_gains_biases)
         nonhidden_params = unique_params(nonhidden_params)
+        first_cnn_layer_params = unique_params(first_cnn_layer_params)
 
         # Fallback: if some trainable params were not captured (rare), put them into the aux group
-        captured = set([id(p) for p in hidden_weights + hidden_gains_biases + nonhidden_params])
+        captured = set([id(p) for p in hidden_weights + hidden_gains_biases + nonhidden_params + first_cnn_layer_params])
         other_params = [p for p in model.parameters() if p.requires_grad and id(p) not in captured]
 
         # Compose final param groups
@@ -403,7 +427,8 @@ def main():
                 'weight_decay': args.weight_decay,
             })
 
-        aux_group_params = hidden_gains_biases + nonhidden_params + other_params
+        # Aux group includes: 1D params, heads/embeddings, first CNN layer (by default), and any other params
+        aux_group_params = hidden_gains_biases + nonhidden_params + first_cnn_layer_params + other_params
         if len(aux_group_params) > 0:
             param_groups.append({
                 'params': aux_group_params,
@@ -418,7 +443,13 @@ def main():
             optimizers = (optimizer, None)
             n_muon = sum(p.numel() for g in param_groups if g.get('use_muon') for p in g['params'])
             n_aux = sum(p.numel() for g in param_groups if not g.get('use_muon') for p in g['params'])
+            n_first_cnn = sum(p.numel() for p in first_cnn_layer_params)
             print(f"   MuonWithAuxAdam: {n_muon:,} muon params, {n_aux:,} aux params")
+            if n_first_cnn > 0:
+                if args.muon_first_cnn_layer:
+                    print(f"   First CNN layer: {n_first_cnn:,} params optimized with Muon")
+                else:
+                    print(f"   First CNN layer: {n_first_cnn:,} params optimized with Adam (excluded from Muon)")
     
     # Initialize W&B if requested
     if args.wandb:
