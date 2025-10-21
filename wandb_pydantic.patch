@@ -1,0 +1,8 @@
+16c16
+< Typename = Annotated[T, Field(repr=False, frozen=True, alias="__typename")]
+---
+> Typename = Annotated[T, Field(alias="__typename")]
+20c20
+<     GQLId = Annotated[StrictStr, Field(repr=False, frozen=True)]
+---
+>     GQLId = Annotated[StrictStr, Field()]
