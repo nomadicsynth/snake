@@ -4,39 +4,45 @@ Generate Snake pretraining dataset in HuggingFace format
 """
 
 import argparse
+import random
 from pathlib import Path
 import numpy as np
 import torch
 from datasets import Dataset, DatasetDict
+from datasets import Features, Value, Sequence
 from pretrain_dataset import generate_pretraining_dataset
 from pretrain_utils import state_from_positions
 
 
-def convert_to_hf_dataset(samples, has_reasoning=False):
-    """
-    Convert list of samples to HuggingFace Dataset
-    
-    Args:
-        samples: List of dicts with 'state', 'action', optionally 'reasoning_tokens'
-        has_reasoning: Whether dataset has reasoning tokens (RSM mode)
-    
-    Returns:
-        HuggingFace Dataset
-    """
-    # Extract arrays
-    states = np.array([s['state'] for s in samples], dtype=np.float32)
-    actions = np.array([s['action'] for s in samples], dtype=np.int64)
-    
-    data_dict = {
-        'state': states,
-        'action': actions,
+def _cast_sample(sample, state_dtype: str, action_dtype: str, reasoning_dtype: str, has_reasoning: bool):
+    """Cast fields to desired dtypes to reduce memory/IO."""
+    state = np.asarray(sample['state'], dtype=state_dtype)
+    action = np.asarray(sample['action'], dtype=action_dtype)
+    out = {
+        'state': state,
+        'action': action,
     }
-    
-    if has_reasoning:
-        reasoning_tokens = np.array([s['reasoning_tokens'] for s in samples], dtype=np.int64)
-        data_dict['reasoning_tokens'] = reasoning_tokens
-    
-    return Dataset.from_dict(data_dict)
+    if has_reasoning and 'reasoning_tokens' in sample:
+        out['reasoning_tokens'] = np.asarray(sample['reasoning_tokens'], dtype=reasoning_dtype)
+    return out
+
+
+def yield_samples_in_chunks(total_samples: int, batch_size: int, gen_kwargs: dict, *,
+                            state_dtype: str, action_dtype: str, reasoning_dtype: str,
+                            has_reasoning: bool):
+    """Yield up to total_samples items by repeatedly calling generate_pretraining_dataset.
+
+    Only at most one batch is kept in RAM at a time.
+    """
+    num_yielded = 0
+    while num_yielded < total_samples:
+        current_batch = min(batch_size, total_samples - num_yielded)
+        batch = generate_pretraining_dataset(num_samples=current_batch, **gen_kwargs)
+        for sample in batch:
+            yield _cast_sample(sample, state_dtype, action_dtype, reasoning_dtype, has_reasoning)
+            num_yielded += 1
+            if num_yielded >= total_samples:
+                break
 
 
 def main():
@@ -71,6 +77,17 @@ def main():
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
     parser.add_argument('--val-split', type=float, default=0.1, 
                         help='Validation split fraction')
+    parser.add_argument('--batch-size', type=int, default=10000,
+                        help='Batch size for streamed Arrow writing')
+    parser.add_argument('--state-dtype', type=str, default='float16',
+                        choices=['float16', 'float32'],
+                        help='State tensor dtype for storage')
+    parser.add_argument('--action-dtype', type=str, default='int8',
+                        choices=['int8', 'int16', 'int32', 'int64'],
+                        help='Action dtype for storage')
+    parser.add_argument('--reasoning-dtype', type=str, default='int32',
+                        choices=['int16', 'int32', 'int64'],
+                        help='Reasoning token dtype for storage')
     
     # Reasoning Snake Model (RSM) parameters
     parser.add_argument('--reasoning', action='store_true', 
@@ -103,10 +120,15 @@ def main():
         print(f"  Reasoning format: {args.reasoning_format}")
     print()
     
-    # Generate dataset
-    print("Generating dataset...")
-    samples = generate_pretraining_dataset(
-        num_samples=args.num_samples,
+    # Seed global RNGs once; do not reseed per batch to avoid duplicates
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(args.seed)
+    
+    # Prepare generation kwargs shared across batches
+    gen_kwargs = dict(
         width=args.width,
         height=args.height,
         min_length=args.min_length,
@@ -117,58 +139,77 @@ def main():
         failure_ratio=args.failure_ratio,
         epsilon_greedy_ratio=args.epsilon_greedy_ratio,
         epsilon=args.epsilon,
-        seed=args.seed,
         add_reasoning=args.reasoning,
         reasoning_depth=args.reasoning_depth,
         reasoning_format=args.reasoning_format,
     )
-    
-    print(f"\n✅ Generated {len(samples)} samples")
-    
+
     has_reasoning = args.reasoning
-    
-    # Split into train/val
-    n_val = int(len(samples) * args.val_split)
-    n_train = len(samples) - n_val
-    
-    train_samples = samples[:n_train]
-    val_samples = samples[n_train:]
-    
-    print(f"\nDataset split:")
-    print(f"  Training: {len(train_samples):,} samples")
-    print(f"  Validation: {len(val_samples):,} samples")
-    
-    # Convert to HuggingFace datasets
-    print("\nConverting to HuggingFace format...")
-    train_dataset = convert_to_hf_dataset(train_samples, has_reasoning)
-    val_dataset = convert_to_hf_dataset(val_samples, has_reasoning)
-    
+
+    # Determine split sizes without ever holding all samples in RAM
+    n_val = int(args.num_samples * args.val_split)
+    n_train = args.num_samples - n_val
+
+    print("Generating and writing datasets in a streamed manner...")
+    print(f"  Training:   {n_train:,} samples")
+    print(f"  Validation: {n_val:,} samples")
+
+    # Build datasets from generators with small writer batches to keep RAM low
+    def train_gen():
+        yield from yield_samples_in_chunks(
+            n_train, args.batch_size, gen_kwargs,
+            state_dtype=args.state_dtype,
+            action_dtype=args.action_dtype,
+            reasoning_dtype=args.reasoning_dtype,
+            has_reasoning=has_reasoning,
+        )
+
+    def val_gen():
+        yield from yield_samples_in_chunks(
+            n_val, args.batch_size, gen_kwargs,
+            state_dtype=args.state_dtype,
+            action_dtype=args.action_dtype,
+            reasoning_dtype=args.reasoning_dtype,
+            has_reasoning=has_reasoning,
+        )
+
+    # Let datasets infer features to avoid relying on unknown state shape
+    print("\nConverting to HuggingFace format (streamed)...")
+    train_dataset = Dataset.from_generator(
+        train_gen,
+        writer_batch_size=args.batch_size,
+    )
+    val_dataset = Dataset.from_generator(
+        val_gen,
+        writer_batch_size=args.batch_size,
+    )
+
     dataset_dict = DatasetDict({
         'train': train_dataset,
         'validation': val_dataset,
     })
-    
+
     # Save
     output_path = Path(args.output)
     print(f"\nSaving to {output_path}...")
     dataset_dict.save_to_disk(str(output_path))
-    
+
     print(f"\n✅ Dataset saved!")
     print(f"   Path: {output_path}")
-    print(f"   Format: HuggingFace Dataset")
+    print(f"   Format: HuggingFace Dataset (streamed)")
     print()
-    
+
     # Print sample info
     sample = train_dataset[0]
     state_shape = np.array(sample['state']).shape
     print("Sample structure:")
-    print(f"  state: {state_shape} (float32)")
-    print(f"  action: scalar (int64)")
+    print(f"  state: {state_shape} ({args.state_dtype})")
+    print(f"  action: scalar ({args.action_dtype})")
     if has_reasoning:
         reasoning_shape = np.array(sample['reasoning_tokens']).shape
-        print(f"  reasoning_tokens: {reasoning_shape} (int64)")
+        print(f"  reasoning_tokens: {reasoning_shape} ({args.reasoning_dtype})")
     print()
-    
+
     print("Dataset info:")
     print(dataset_dict)
     print()
