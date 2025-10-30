@@ -200,7 +200,6 @@ def tokenize_reasoning(reasoning_text: str, vocab_size: int = 128) -> np.ndarray
 
 def reasoning_to_embeddings(
     reasoning_text: str,
-    d_model: int,
     max_length: int = 128,
     vocab_size: int = 128
 ) -> np.ndarray:
@@ -262,6 +261,6 @@ if __name__ == "__main__":
     print()
     
     # Tokenization
-    tokens = reasoning_to_embeddings(reasoning_compact, d_model=64, max_length=128)
+    tokens = reasoning_to_embeddings(reasoning_compact, max_length=128)
     print(f"Tokenized (first 50 tokens): {tokens[:50]}")
     print(f"Total tokens: {len(tokens)}, Non-zero: {np.count_nonzero(tokens)}")

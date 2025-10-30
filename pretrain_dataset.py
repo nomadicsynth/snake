@@ -235,7 +235,7 @@ def generate_pretraining_dataset(
                 snake_positions, food_pos, width, height, expert_action,
                 lookahead_depth=reasoning_depth, format=reasoning_format
             )
-            reasoning_tokens = reasoning_to_embeddings(reasoning_text, d_model=64, max_length=128)
+            reasoning_tokens = reasoning_to_embeddings(reasoning_text, max_length=128)
         
         # Create base sample
         sample = {
@@ -299,7 +299,7 @@ def generate_pretraining_dataset(
                     snake_positions, food_pos, width, height, random_action,
                     lookahead_depth=reasoning_depth, format=reasoning_format
                 )
-                reasoning_tokens = reasoning_to_embeddings(reasoning_text, d_model=64, max_length=128)
+                reasoning_tokens = reasoning_to_embeddings(reasoning_text, max_length=128)
                 failure_sample['reasoning'] = reasoning_text
                 failure_sample['reasoning_tokens'] = reasoning_tokens
             
@@ -343,7 +343,7 @@ def generate_pretraining_dataset(
                     snake_positions, food_pos, width, height, random_action,
                     lookahead_depth=reasoning_depth, format=reasoning_format
                 )
-                reasoning_tokens = reasoning_to_embeddings(reasoning_text, d_model=64, max_length=128)
+                reasoning_tokens = reasoning_to_embeddings(reasoning_text, max_length=128)
                 epsilon_sample['reasoning'] = reasoning_text
                 epsilon_sample['reasoning_tokens'] = reasoning_tokens
             
