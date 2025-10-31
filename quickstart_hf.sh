@@ -16,14 +16,14 @@ python generate_dataset_hf.py \
     --height 20 \
     --use-astar \
     --augment \
-    --output snake_dataset_hf \
+    --output outputs/datasets/snake_dataset_hf \
     --seed 42
 
 echo
 echo "Step 2: Training model with Muon optimizer..."
 python train_hf.py \
-    --dataset snake_dataset_hf \
-    --d-model 64 \
+    --dataset outputs/datasets/snake_dataset_hf \
+    --d-model 128 \
     --num-layers 2 \
     --num-heads 4 \
     --dropout 0.1 \
@@ -34,7 +34,7 @@ python train_hf.py \
     --muon-momentum 0.95 \
     --warmup-ratio 0.1 \
     --lr-scheduler cosine \
-    --output-dir snake_hf_output \
+    --output-dir outputs/snake_hf_output \
     --wandb \
     --wandb-project snake-hf \
     --seed 42
