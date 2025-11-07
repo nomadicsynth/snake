@@ -172,11 +172,11 @@ def generate_reasoning_text(
     if format == 'compact':
         actions_str = " ".join(action_analyses)
         best_str = DIRECTION_NAMES[expert_action]
-        return f"THINK: {actions_str} | BEST:{best_str} | ACT:{expert_action}"
+        return f"THINK: {actions_str} | BEST:{best_str}"
     else:  # verbose
         actions_str = "\n  ".join(action_analyses)
         best_str = DIRECTION_FULL[expert_action]
-        return f"THINK:\n  {actions_str}\nBEST: {best_str}\nACT: {expert_action}"
+        return f"THINK:\n  {actions_str}\nBEST: {best_str}"
 
 
 def tokenize_reasoning(reasoning_text: str, vocab_size: int = 128) -> np.ndarray:

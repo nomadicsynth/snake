@@ -25,6 +25,7 @@ def _cast_sample(sample, has_reasoning: bool):
         'action': action,
     }
     if has_reasoning and 'reasoning_tokens' in sample:
+        out['reasoning'] = sample['reasoning']
         out['reasoning_tokens'] = np.asarray(sample['reasoning_tokens'], dtype='int32')
     return out
 
@@ -183,7 +184,7 @@ def main():
 
     print(f"\n✅ Dataset saved!")
     print(f"   Path: {output_path}")
-    print(f"   Format: HuggingFace Dataset (streamed)")
+    print(f"   Format: HuggingFace Dataset")
     print()
 
     # Print sample info
@@ -193,8 +194,12 @@ def main():
     print(f"  state: {state_shape} (float32)")
     print(f"  action: scalar (int8)")
     if has_reasoning:
-        reasoning_shape = np.array(sample['reasoning_tokens']).shape
-        print(f"  reasoning_tokens: {reasoning_shape} (int32)")
+        reasoning_length = len(sample['reasoning_tokens']) if isinstance(sample['reasoning_tokens'], list) else 0
+        if reasoning_length > 0:
+            print(f"  reasoning_tokens length: {reasoning_length}")
+            print(f"  reasoning_tokens: {sample['reasoning_tokens']}")
+        else:
+            print(f"  reasoning_tokens: ERROR: reasoning_tokens is empty")
     print()
 
     print("Dataset info:")

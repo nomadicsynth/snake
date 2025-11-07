@@ -382,17 +382,28 @@ def generate_pretraining_dataset(
                         )
                         aug_probs[transformed_action] += sample['action_probs'][orig_action]
                 
-                augmented_dataset.append({
+                augmented_sample = {
                     'state': aug_state,
                     'action': aug_action,
                     'action_probs': aug_probs,
                     'metadata': sample['metadata'].copy()
-                })
+                }
+
+                if add_reasoning:
+                    snake_positions, food_pos = get_positions_from_state(aug_state)
+                    reasoning_text = generate_reasoning_text(
+                        snake_positions, food_pos, width, height, aug_action,
+                        lookahead_depth=reasoning_depth, format=reasoning_format
+                    )
+                    reasoning_tokens = reasoning_to_embeddings(reasoning_text, max_length=128)
+                    augmented_sample['reasoning'] = reasoning_text
+                    augmented_sample['reasoning_tokens'] = reasoning_tokens
+
+                augmented_dataset.append(augmented_sample)
         
-        dataset = augmented_dataset
-        print(f"Dataset size after augmentation: {len(dataset)}")
+        print(f"Dataset size after augmentation: {len(augmented_dataset)}")
     
-    return dataset
+    return augmented_dataset
 
 
 def save_dataset(dataset: List[Dict], filepath: str):
