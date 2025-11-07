@@ -17,9 +17,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import imageio
 
-from snake_jax.config import EnvConfig
-from snake_jax.env import SnakeEnv
-from snake_jax.network import TransformerPolicy
+from environments.snake_jax.config import EnvConfig
+from environments.snake_jax.env import SnakeEnv
+from environments.snake_jax.network import TransformerPolicy
 from pretrain_utils import get_positions_from_state
 from reasoning_dsl import generate_reasoning_text, reasoning_to_embeddings
 
