@@ -153,7 +153,7 @@ def render_state(state, env, mode="graphical", return_frame=False, moves=None, s
             return None
 
 
-def play_episode(env, model, device, render=True, delay=0.1, render_mode="graphical", 
+def play_episode(env, model, device, render=True, delay=0.1, max_steps=500, render_mode="graphical", 
                  save_video=False, video_path=None, use_reasoning=False, show_reasoning=False):
     """Play one episode and optionally render it and save video"""
     # Reset environment
@@ -173,7 +173,6 @@ def play_episode(env, model, device, render=True, delay=0.1, render_mode="graphi
         print("🧠 RSM mode active - generating reasoning...")
     print("="*50)
     
-    max_steps = 500  # Safety limit
     while not done and steps < max_steps:
         frame = None
         if render:
@@ -186,7 +185,7 @@ def play_episode(env, model, device, render=True, delay=0.1, render_mode="graphi
         
         # Get action from policy
         # State format now matches model format (R=food, G=snake, B=empty)
-        # Use autoregressive reasoning generation for RSM models
+        # Use autoregressive reasoning generation for RSM models (untested)
         if use_reasoning:
             # Generate reasoning autoregressively
             reasoning_tokens, action, reasoning_text = generate_reasoning_autoregressive(
@@ -327,6 +326,7 @@ def main():
     parser.add_argument("--env-width", type=int, default=32, help="Environment width")
     parser.add_argument("--env-height", type=int, default=32, help="Environment height")
     parser.add_argument("--episodes", type=int, default=5, help="Number of episodes to play")
+    parser.add_argument("--max-steps", type=int, default=500, help="Maximum number of steps per episode")
     parser.add_argument("--delay", type=float, default=0.1, help="Delay between steps (seconds)")
     parser.add_argument("--no-render", action="store_true", help="Don't render (just compute stats)")
     parser.add_argument("--render-mode", choices=["graphical", "ascii"], default="graphical", help="Rendering mode (graphical or ascii)")
@@ -375,6 +375,7 @@ def main():
         wall_collision=True,
         apple_reward=10.0,
         death_penalty=-10.0,
+        max_steps=args.max_steps,
     )
     
     print(f"Playing {args.episodes} episodes...")
@@ -409,6 +410,7 @@ def main():
             env, model, device,
             render=not args.no_render,
             delay=args.delay,
+            max_steps=args.max_steps,
             render_mode=args.render_mode,
             save_video=args.save_video and args.render_mode == "graphical",
             video_path=video_path,
