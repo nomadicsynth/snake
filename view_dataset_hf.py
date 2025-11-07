@@ -14,7 +14,7 @@ import numpy as np
 from pretrain_utils import get_positions_from_state
 
 
-def render_ascii(state: np.ndarray, action: int, action_names: bool = False):
+def render_ascii(state: np.ndarray, action: int, action_names: bool = False, reasoning: str = None):
     """
     Render game state in ASCII format.
     
@@ -59,9 +59,11 @@ def render_ascii(state: np.ndarray, action: int, action_names: bool = False):
     print(f"└{border}┘")
     print(f"Action: {action_str} ({action_map[action]})")
     print(f"Snake length: {len(snake_positions)}")
+    print(f"Reasoning: {reasoning}")
+    print()
 
 
-def render_graphical(state: np.ndarray, action: int, action_names: bool = False):
+def render_graphical(state: np.ndarray, action: int, action_names: bool = False, reasoning: str = None, sample_number: int = None):
     """
     Render game state using matplotlib.
     
@@ -69,6 +71,8 @@ def render_graphical(state: np.ndarray, action: int, action_names: bool = False)
         state: (H, W, 3) state array
         action: Action integer (0-3)
         action_names: If True, show action name instead of number
+        reasoning: Reasoning string
+        sample_number: Sample number
     """
     try:
         snake_positions, food_pos = get_positions_from_state(state)
@@ -98,13 +102,15 @@ def render_graphical(state: np.ndarray, action: int, action_names: bool = False)
     # Action mapping
     action_map = {0: "Up", 1: "Right", 2: "Down", 3: "Left"}
     action_str = f"{str(action)} ({action_map[action]})"
-    
+    reasoning_str = f"Reasoning: {reasoning}" if reasoning is not None else ""
     # Display
-    plt.figure(figsize=(8, 8))
-    plt.imshow(grid, interpolation='nearest')
-    plt.title(f"Action: {action_str} | Snake length: {len(snake_positions)}")
-    plt.axis('off')
-    plt.tight_layout()
+    fig = plt.figure(figsize=(8, 8))
+    ax = fig.add_subplot()
+    ax.imshow(grid, interpolation='nearest')
+    fig.suptitle(f"Sample {sample_number} | Action: {action_str} | Snake length: {len(snake_positions)}", fontsize=10)
+    ax.set_title(reasoning_str, fontsize=8, loc='center', pad=10)
+    ax.axis('off')
+    fig.tight_layout()
     plt.show()
 
 
@@ -255,20 +261,9 @@ def main():
         
         # Render based on mode
         if args.mode == 'ascii':
-            render_ascii(state, action, args.action_names)
+            render_ascii(state, action, args.action_names, sample['reasoning'])
         else:
-            render_graphical(state, action, args.action_names)
-        
-        # Show reasoning tokens if present and requested
-        if args.show_reasoning and 'reasoning_tokens' in sample:
-            reasoning_tokens = sample['reasoning_tokens']
-            if isinstance(reasoning_tokens, np.ndarray):
-                tokens = reasoning_tokens.tolist()
-            else:
-                tokens = reasoning_tokens
-            
-            print(f"\nReasoning tokens ({len(tokens)} tokens):")
-            print(f"  {tokens[:50]}..." if len(tokens) > 50 else f"  {tokens}")
+            render_graphical(state, action, args.action_names, sample['reasoning'], idx)
         
         print()
     
