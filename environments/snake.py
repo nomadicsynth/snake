@@ -9,12 +9,6 @@ import random
 import numpy as np
 
 
-# Default configuration
-DEFAULT_WIDTH = 10
-DEFAULT_HEIGHT = 10
-DEFAULT_MAX_STEPS = 500
-
-
 class SnakeGame:
     """
     Snake game environment.
@@ -41,7 +35,7 @@ class SnakeGame:
         death_penalty: float = -10.0,
         num_apples: int = 1,
         initial_snake_length: int = 3,
-        max_steps: int = DEFAULT_MAX_STEPS,
+        max_steps: int = 500,
     ):
         """
         Initialize Snake game environment.
