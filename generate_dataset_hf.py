@@ -152,6 +152,7 @@ def main():
         'action': Value('int8'),
     }
     if has_reasoning:
+        features_dict['reasoning'] = Value('string')
         features_dict['reasoning_tokens'] = Sequence(Value('int32'))
     features = Features(features_dict)
 
@@ -194,6 +195,7 @@ def main():
     print(f"  state: {state_shape} (float32)")
     print(f"  action: scalar (int8)")
     if has_reasoning:
+        print(f"  reasoning: {sample['reasoning']}")
         reasoning_length = len(sample['reasoning_tokens']) if isinstance(sample['reasoning_tokens'], list) else 0
         if reasoning_length > 0:
             print(f"  reasoning_tokens length: {reasoning_length}")
