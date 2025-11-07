@@ -108,7 +108,8 @@ def render_graphical(state: np.ndarray, action: int, action_names: bool = False,
     ax = fig.add_subplot()
     ax.imshow(grid, interpolation='nearest')
     fig.suptitle(f"Sample {sample_number} | Action: {action_str} | Snake length: {len(snake_positions)}", fontsize=10)
-    ax.set_title(reasoning_str, fontsize=8, loc='center', pad=10)
+    if reasoning is not None:
+        ax.set_title(reasoning_str, fontsize=8, loc='center', pad=10)
     ax.axis('off')
     fig.tight_layout()
     plt.show()
@@ -258,12 +259,16 @@ def main():
         
         print(f"\nSample {idx}:")
         print("-"*70)
+
+        sample_reasoning = None
+        if 'reasoning' in sample:
+            sample_reasoning = sample['reasoning']
         
         # Render based on mode
         if args.mode == 'ascii':
-            render_ascii(state, action, args.action_names, sample['reasoning'])
+            render_ascii(state, action, args.action_names, sample_reasoning)
         else:
-            render_graphical(state, action, args.action_names, sample['reasoning'], idx)
+            render_graphical(state, action, args.action_names, sample_reasoning, idx)
         
         print()
     
