@@ -13,8 +13,7 @@ from datasets import Dataset, DatasetDict
 from pretrain_dataset import generate_pretraining_dataset
 from pretrain_utils import state_from_positions
 import sys
-sys.path.insert(0, str(Path(__file__).parent / 'archived_implementations'))
-from snake import SnakeEnv
+from environments.snake import SnakeEnv
 
 
 def apply_action_get_next_state(state, action, width=32, height=32):
