@@ -4,31 +4,32 @@ Generate Snake pretraining dataset in HuggingFace format
 """
 
 import argparse
-import random
 from pathlib import Path
+import random
+import tempfile
+
+from datasets import Dataset, DatasetDict
+from datasets import Array3D, Features, Sequence, Value
 import numpy as np
 import torch
-from datasets import Dataset, DatasetDict
-from datasets import Features, Value, Sequence
+
 from pretrain_dataset import generate_pretraining_dataset
-from pretrain_utils import state_from_positions
 
 
-def _cast_sample(sample, state_dtype: str, action_dtype: str, reasoning_dtype: str, has_reasoning: bool):
-    """Cast fields to desired dtypes to reduce memory/IO."""
-    state = np.asarray(sample['state'], dtype=state_dtype)
-    action = np.asarray(sample['action'], dtype=action_dtype)
+def _cast_sample(sample, has_reasoning: bool):
+    """Cast fields to stable dtypes for storage and IO."""
+    state = np.asarray(sample['state'], dtype='float32')
+    action = int(np.asarray(sample['action'], dtype='int8'))
     out = {
         'state': state,
         'action': action,
     }
     if has_reasoning and 'reasoning_tokens' in sample:
-        out['reasoning_tokens'] = np.asarray(sample['reasoning_tokens'], dtype=reasoning_dtype)
+        out['reasoning_tokens'] = np.asarray(sample['reasoning_tokens'], dtype='int32')
     return out
 
 
 def yield_samples_in_chunks(total_samples: int, batch_size: int, gen_kwargs: dict, *,
-                            state_dtype: str, action_dtype: str, reasoning_dtype: str,
                             has_reasoning: bool):
     """Yield up to total_samples items by repeatedly calling generate_pretraining_dataset.
 
@@ -39,7 +40,7 @@ def yield_samples_in_chunks(total_samples: int, batch_size: int, gen_kwargs: dic
         current_batch = min(batch_size, total_samples - num_yielded)
         batch = generate_pretraining_dataset(num_samples=current_batch, **gen_kwargs)
         for sample in batch:
-            yield _cast_sample(sample, state_dtype, action_dtype, reasoning_dtype, has_reasoning)
+            yield _cast_sample(sample, has_reasoning)
             num_yielded += 1
             if num_yielded >= total_samples:
                 break
@@ -50,53 +51,28 @@ def main():
         description="Generate Snake dataset in HuggingFace format"
     )
     
-    parser.add_argument('--num-samples', type=int, default=50000, 
-                        help='Number of unique states to generate (before augmentation)')
+    parser.add_argument('--num-samples', type=int, default=50000, help='Number of unique states to generate (before augmentation)')
     parser.add_argument('--width', type=int, default=20, help='Grid width')
     parser.add_argument('--height', type=int, default=20, help='Grid height')
     parser.add_argument('--min-length', type=int, default=3, help='Minimum snake length')
     parser.add_argument('--max-length', type=int, default=30, help='Maximum snake length')
-    parser.add_argument('--use-astar', action='store_true', default=True, 
-                        help='Use A* for expert labels (default: True)')
-    parser.add_argument('--no-astar', dest='use_astar', action='store_false', 
-                        help='Use heuristics instead of A*')
-    parser.add_argument('--temperature', type=float, default=0.5, 
-                        help='Temperature for soft labels')
-    parser.add_argument('--augment', action='store_true', default=True, 
-                        help='Apply 8x geometric augmentation (default: True)')
-    parser.add_argument('--no-augment', dest='augment', action='store_false', 
-                        help='Skip augmentation')
-    parser.add_argument('--failure-ratio', type=float, default=0.0, 
-                        help='Ratio of random/failure action samples to add')
-    parser.add_argument('--epsilon-greedy-ratio', type=float, default=0.0, 
-                        help='Ratio of epsilon-greedy samples to add')
-    parser.add_argument('--epsilon', type=float, default=0.3, 
-                        help='Epsilon value for epsilon-greedy sampling')
-    parser.add_argument('--output', type=str, default='snake_dataset_hf', 
-                        help='Output directory path')
+    parser.add_argument('--use-astar', action='store_true', default=True, help='Use A* for expert labels (default: True)')
+    parser.add_argument('--no-astar', dest='use_astar', action='store_false', help='Use heuristics instead of A*')
+    parser.add_argument('--temperature', type=float, default=0.5, help='Temperature for soft labels')
+    parser.add_argument('--augment', action='store_true', default=True, help='Apply 8x geometric augmentation (default: True)')
+    parser.add_argument('--no-augment', dest='augment', action='store_false', help='Skip augmentation')
+    parser.add_argument('--failure-ratio', type=float, default=0.0, help='Ratio of random/failure action samples to add')
+    parser.add_argument('--epsilon-greedy-ratio', type=float, default=0.0, help='Ratio of epsilon-greedy samples to add')
+    parser.add_argument('--epsilon', type=float, default=0.3, help='Epsilon value for epsilon-greedy sampling')
+    parser.add_argument('--output', type=str, default='snake_dataset_hf', help='Output directory path')
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
-    parser.add_argument('--val-split', type=float, default=0.1, 
-                        help='Validation split fraction')
-    parser.add_argument('--batch-size', type=int, default=10000,
-                        help='Batch size for streamed Arrow writing')
-    parser.add_argument('--state-dtype', type=str, default='float16',
-                        choices=['float16', 'float32'],
-                        help='State tensor dtype for storage')
-    parser.add_argument('--action-dtype', type=str, default='int8',
-                        choices=['int8', 'int16', 'int32', 'int64'],
-                        help='Action dtype for storage')
-    parser.add_argument('--reasoning-dtype', type=str, default='int32',
-                        choices=['int16', 'int32', 'int64'],
-                        help='Reasoning token dtype for storage')
+    parser.add_argument('--val-split', type=float, default=0.1, help='Validation split fraction')
+    parser.add_argument('--batch-size', type=int, default=10000, help='Batch size for streamed Arrow writing')
     
     # Reasoning Snake Model (RSM) parameters
-    parser.add_argument('--reasoning', action='store_true', 
-                        help='Add CoT-style reasoning before actions (RSM mode)')
-    parser.add_argument('--reasoning-depth', type=int, default=1, choices=[1, 2, 3], 
-                        help='Lookahead depth for reasoning (1-3 steps)')
-    parser.add_argument('--reasoning-format', type=str, default='compact', 
-                        choices=['compact', 'verbose'], 
-                        help='Reasoning text format')
+    parser.add_argument('--reasoning', action='store_true', help='Add CoT-style reasoning before actions (RSM mode)')
+    parser.add_argument('--reasoning-depth', type=int, default=1, choices=[1, 2, 3], help='Lookahead depth for reasoning (1-3 steps)')
+    parser.add_argument('--reasoning-format', type=str, default='compact', choices=['compact', 'verbose'], help='Reasoning text format')
 
     args = parser.parse_args()
     
@@ -158,30 +134,37 @@ def main():
     def train_gen():
         yield from yield_samples_in_chunks(
             n_train, args.batch_size, gen_kwargs,
-            state_dtype=args.state_dtype,
-            action_dtype=args.action_dtype,
-            reasoning_dtype=args.reasoning_dtype,
             has_reasoning=has_reasoning,
         )
 
     def val_gen():
         yield from yield_samples_in_chunks(
             n_val, args.batch_size, gen_kwargs,
-            state_dtype=args.state_dtype,
-            action_dtype=args.action_dtype,
-            reasoning_dtype=args.reasoning_dtype,
             has_reasoning=has_reasoning,
         )
 
-    # Let datasets infer features to avoid relying on unknown state shape
+    # Build explicit HF Features so dtype/shape round-trip reliably
     print("\nConverting to HuggingFace format (streamed)...")
+    state_feature = Array3D(dtype='float32', shape=(args.height, args.width, 3))
+    features_dict = {
+        'state': state_feature,
+        'action': Value('int8'),
+    }
+    if has_reasoning:
+        features_dict['reasoning_tokens'] = Sequence(Value('int32'))
+    features = Features(features_dict)
+
     train_dataset = Dataset.from_generator(
         train_gen,
         writer_batch_size=args.batch_size,
+        features=features,
+        cache_dir=tempfile.mkdtemp()
     )
     val_dataset = Dataset.from_generator(
         val_gen,
         writer_batch_size=args.batch_size,
+        features=features,
+        cache_dir=tempfile.mkdtemp()
     )
 
     dataset_dict = DatasetDict({
@@ -194,6 +177,10 @@ def main():
     print(f"\nSaving to {output_path}...")
     dataset_dict.save_to_disk(str(output_path))
 
+    print("Cleaning up temporary cache directory...")
+    train_dataset.cleanup_cache_files()
+    val_dataset.cleanup_cache_files()
+
     print(f"\n✅ Dataset saved!")
     print(f"   Path: {output_path}")
     print(f"   Format: HuggingFace Dataset (streamed)")
@@ -203,11 +190,11 @@ def main():
     sample = train_dataset[0]
     state_shape = np.array(sample['state']).shape
     print("Sample structure:")
-    print(f"  state: {state_shape} ({args.state_dtype})")
-    print(f"  action: scalar ({args.action_dtype})")
+    print(f"  state: {state_shape} (float32)")
+    print(f"  action: scalar (int8)")
     if has_reasoning:
         reasoning_shape = np.array(sample['reasoning_tokens']).shape
-        print(f"  reasoning_tokens: {reasoning_shape} ({args.reasoning_dtype})")
+        print(f"  reasoning_tokens: {reasoning_shape} (int32)")
     print()
 
     print("Dataset info:")

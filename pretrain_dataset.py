@@ -3,22 +3,23 @@ Dataset generation for Snake pretraining.
 Creates synthetic game states with expert labels.
 """
 
-import numpy as np
-from typing import List, Tuple, Dict, Optional
-import random
-from tqdm import tqdm
 import pickle
+import random
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
 import torch
 from torch.utils.data import Dataset
+from tqdm import tqdm
 
 from pretrain_utils import (
+    AUGMENTATIONS,
+    augment_state_action,
     get_action_distribution,
     get_expert_action_astar,
+    get_positions_from_state,
     get_safe_actions,
     state_from_positions,
-    augment_state_action,
-    AUGMENTATIONS,
-    get_positions_from_state
 )
 from reasoning_dsl import generate_reasoning_text, reasoning_to_embeddings
 

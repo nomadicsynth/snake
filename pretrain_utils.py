@@ -2,10 +2,11 @@
 Utilities for generating expert demonstrations and labels for Snake pretraining.
 """
 
-import numpy as np
-from typing import Tuple, List, Optional, Dict
 from collections import deque
 import heapq
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
 
 
 def manhattan_distance(pos1: Tuple[int, int], pos2: Tuple[int, int]) -> int:
@@ -282,11 +283,23 @@ def state_from_positions(
     """
     state = np.zeros((height, width, 3), dtype=np.float32)
     
-    # Mark all snake positions in green
-    for pos in snake_positions:
-        state[pos[0], pos[1], 0] = 0.0   # R
-        state[pos[0], pos[1], 1] = 1.0   # G
-        state[pos[0], pos[1], 2] = 0.0   # B
+    # Mark snake with head-to-tail green gradient (head brightest = 1.0)
+    length = len(snake_positions)
+    if length == 1:
+        y, x = snake_positions[0]
+        state[y, x, 0] = 0.0
+        state[y, x, 1] = 1.0
+        state[y, x, 2] = 0.0
+    elif length > 1:
+        # Linearly decrease green from head (index 0) toward tail (index length-1)
+        # Tail floor kept > 0 for reliable recovery
+        tail_floor = 0.2
+        for idx, (y, x) in enumerate(snake_positions):
+            t = idx / (length - 1)
+            g = (1.0 - t) * (1.0 - tail_floor) + tail_floor
+            state[y, x, 0] = 0.0
+            state[y, x, 1] = float(g)
+            state[y, x, 2] = 0.0
     
     # Food in red
     state[food_pos[0], food_pos[1], 0] = 1.0   # R
@@ -355,26 +368,26 @@ def augment_state_action(
         aug_state = np.rot90(aug_state, k=1, axes=(0, 1))
         # Combined transformation
         if action == 0:  # Up
-            aug_action = 1
+            aug_action = 3  # Left
         elif action == 1:  # Right
-            aug_action = 2
+            aug_action = 2  # Down
         elif action == 2:  # Down
-            aug_action = 3
+            aug_action = 1  # Right
         elif action == 3:  # Left
-            aug_action = 0
+            aug_action = 0  # Up
     
     elif augmentation == 'flip_v_rot90':
         aug_state = np.flip(aug_state, axis=0)
         aug_state = np.rot90(aug_state, k=1, axes=(0, 1))
         # Combined transformation
         if action == 0:  # Up
-            aug_action = 3
+            aug_action = 1  # Right
         elif action == 1:  # Right
-            aug_action = 0
+            aug_action = 0  # Up
         elif action == 2:  # Down
-            aug_action = 1
+            aug_action = 3  # Left
         elif action == 3:  # Left
-            aug_action = 2
+            aug_action = 2  # Down
     
     return aug_state, aug_action
 
