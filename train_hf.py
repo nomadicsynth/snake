@@ -6,23 +6,20 @@ PyTorch + Transformers + Datasets implementation
 """
 
 import argparse
-from pathlib import Path
 from datetime import datetime
-import numpy as np
 import os
-import torch
-import torch.nn as nn
-import torch.distributed as dist
+from pathlib import Path
+
 from datasets import load_from_disk
-from transformers import (
-    Trainer,
-    TrainingArguments,
-    TrainerCallback,
-)
+import numpy as np
+import torch
+import torch.distributed as dist
+import torch.nn as nn
+from transformers import Trainer, TrainerCallback, TrainingArguments
 from transformers.trainer_utils import get_last_checkpoint
 import wandb
 
-from model.model_pytorch import TransformerPolicy, SnakeTransformerConfig
+from model.model_pytorch import SnakeTransformerConfig, TransformerPolicy
 
 
 class SnakeDataCollator:
