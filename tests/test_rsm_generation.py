@@ -35,7 +35,7 @@ def test_rsm_generation():
     rng = jax.random.PRNGKey(42)
     rng, init_rng, dropout_rng = jax.random.split(rng, 3)
     
-    dummy_obs = jnp.zeros((1, 20, 20, 3), dtype=jnp.float32)
+    dummy_obs = jnp.zeros((1, 32, 32, 3), dtype=jnp.float32)
     dummy_reasoning = jnp.zeros((1, 10), dtype=jnp.int32)  # Initialize with reasoning tokens
     
     params = network.init(

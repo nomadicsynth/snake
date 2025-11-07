@@ -33,8 +33,8 @@ class SnakeGame:
     
     def __init__(
         self,
-        width=DEFAULT_WIDTH,
-        height=DEFAULT_HEIGHT,
+        width=32,
+        height=32,
         step_penalty: float = -0.01,
         wall_collision: bool = True,
         apple_reward: float = 10.0,

@@ -232,7 +232,7 @@ if __name__ == "__main__":
     # Example game state
     snake_positions = [(10, 10), (10, 9), (10, 8), (9, 8)]
     food_pos = (8, 12)
-    width, height = 20, 20
+    width, height = 32, 32
     expert_action = 1  # Right
     
     # Generate reasoning text

@@ -139,8 +139,8 @@ def generate_random_state(
 
 def generate_pretraining_dataset(
     num_samples: int,
-    width: int = 20,
-    height: int = 20,
+    width: int = 32,
+    height: int = 32,
     min_length: int = 3,
     max_length: int = 30,
     use_astar: bool = True,
@@ -493,8 +493,8 @@ if __name__ == "__main__":
     
     dataset = generate_pretraining_dataset(
         num_samples=1000,
-        width=20,
-        height=20,
+        width=32,
+        height=32,
         use_astar=True,
         augment=True,
         seed=42

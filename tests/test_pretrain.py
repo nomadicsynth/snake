@@ -34,7 +34,7 @@ print("\n2. Testing random state generation...")
 try:
     states_generated = 0
     for i in range(10):
-        state = generate_random_state(width=20, height=20, min_length=3, max_length=10)
+        state = generate_random_state(width=32, height=32, min_length=3, max_length=10)
         if state is not None:
             states_generated += 1
     
@@ -51,7 +51,7 @@ print("\n3. Testing A* pathfinding...")
 try:
     snake_pos = [(10, 10), (10, 9), (10, 8)]
     food_pos = (5, 15)
-    path = astar_to_food(snake_pos, food_pos, width=20, height=20)
+    path = astar_to_food(snake_pos, food_pos, width=32, height=32)
     
     if path is not None and len(path) > 0:
         print(f"   ✓ A* found path of length {len(path)}")
@@ -67,7 +67,7 @@ try:
     snake_pos = [(10, 10), (10, 9), (10, 8)]
     food_pos = (5, 15)
     action_probs = get_action_distribution(
-        snake_pos, food_pos, width=20, height=20, use_astar=True
+        snake_pos, food_pos, width=32, height=32, use_astar=True
     )
     
     if action_probs.shape == (4,) and np.isclose(action_probs.sum(), 1.0):
@@ -82,7 +82,7 @@ except Exception as e:
 # Test 5: Augmentation
 print("\n5. Testing augmentation...")
 try:
-    state = np.random.rand(20, 20, 3)
+    state = np.random.rand(32, 32, 3)
     action = 0  # Up
     
     aug_count = 0
@@ -105,8 +105,8 @@ print("\n6. Testing dataset generation (100 samples)...")
 try:
     dataset = generate_pretraining_dataset(
         num_samples=100,
-        width=20,
-        height=20,
+        width=32,
+        height=32,
         use_astar=True,
         augment=False,  # Skip augmentation for speed
         seed=42
@@ -143,7 +143,7 @@ try:
     assert isinstance(sample['state'], torch.Tensor)
     assert isinstance(sample['action'], torch.Tensor)
     assert isinstance(sample['action_probs'], torch.Tensor)
-    assert sample['state'].shape == (20, 20, 3)
+    assert sample['state'].shape == (32, 32, 3)
     assert sample['action_probs'].shape == (4,)
     
     print(f"   ✓ PyTorch Dataset works")
@@ -157,7 +157,7 @@ except Exception as e:
 print("\n8. Testing model creation...")
 try:
     model = TransformerPolicyPretrainer(
-        height=20, width=20,
+        height=32, width=32,
         d_model=64, num_layers=2, num_heads=4, dropout=0.1
     )
     
@@ -165,7 +165,7 @@ try:
     print(f"   ✓ Model created with {param_count:,} parameters")
     
     # Test forward pass
-    batch = torch.randn(4, 20, 20, 3)
+    batch = torch.randn(4, 32, 32, 3)
     logits = model(batch)
     
     assert logits.shape == (4, 4)

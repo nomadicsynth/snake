@@ -324,8 +324,8 @@ def load_model(model_path, device='cpu'):
 def main():
     parser = argparse.ArgumentParser(description="Play Snake with pretrained HuggingFace model")
     parser.add_argument("--model", type=str, required=True, help="Path to model directory")
-    parser.add_argument("--env-width", type=int, default=20, help="Environment width")
-    parser.add_argument("--env-height", type=int, default=20, help="Environment height")
+    parser.add_argument("--env-width", type=int, default=32, help="Environment width")
+    parser.add_argument("--env-height", type=int, default=32, help="Environment height")
     parser.add_argument("--episodes", type=int, default=5, help="Number of episodes to play")
     parser.add_argument("--delay", type=float, default=0.1, help="Delay between steps (seconds)")
     parser.add_argument("--no-render", action="store_true", help="Don't render (just compute stats)")

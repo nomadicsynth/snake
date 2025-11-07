@@ -53,8 +53,8 @@ def main():
     )
     
     parser.add_argument('--num-samples', type=int, default=50000, help='Number of unique states to generate (before augmentation)')
-    parser.add_argument('--width', type=int, default=20, help='Grid width')
-    parser.add_argument('--height', type=int, default=20, help='Grid height')
+    parser.add_argument('--width', type=int, default=32, help='Grid width')
+    parser.add_argument('--height', type=int, default=32, help='Grid height')
     parser.add_argument('--min-length', type=int, default=3, help='Minimum snake length')
     parser.add_argument('--max-length', type=int, default=30, help='Maximum snake length')
     parser.add_argument('--use-astar', action='store_true', default=True, help='Use A* for expert labels (default: True)')

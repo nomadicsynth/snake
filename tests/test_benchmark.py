@@ -9,7 +9,7 @@ from gymnasium.wrappers import TimeLimit
 batch_size = 128
 timesteps = 200  # Very short test
 
-env = SnakeEnv(width=20, height=20, num_apples=1)
+env = SnakeEnv(width=32, height=32, num_apples=1)
 env = TimeLimit(env, max_episode_steps=500)
 env = Monitor(env)
 

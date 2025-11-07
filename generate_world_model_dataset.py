@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent / 'archived_implementations'))
 from snake import SnakeEnv
 
 
-def apply_action_get_next_state(state, action, width=20, height=20):
+def apply_action_get_next_state(state, action, width=32, height=32):
     """
     Apply action to state and get next state
     
@@ -84,7 +84,7 @@ def apply_action_get_next_state(state, action, width=20, height=20):
     return next_state
 
 
-def convert_to_world_model_dataset(samples, width=20, height=20):
+def convert_to_world_model_dataset(samples, width=32, height=32):
     """
     Convert list of samples to world model dataset with next_state
     
@@ -142,8 +142,8 @@ def main():
     
     parser.add_argument('--num-samples', type=int, default=10000, 
                         help='Number of unique states to generate (before augmentation)')
-    parser.add_argument('--width', type=int, default=20, help='Grid width')
-    parser.add_argument('--height', type=int, default=20, help='Grid height')
+    parser.add_argument('--width', type=int, default=32, help='Grid width')
+    parser.add_argument('--height', type=int, default=32, help='Grid height')
     parser.add_argument('--min-length', type=int, default=3, help='Minimum snake length')
     parser.add_argument('--max-length', type=int, default=30, help='Maximum snake length')
     parser.add_argument('--use-astar', action='store_true', default=True, 
