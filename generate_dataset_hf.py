@@ -142,7 +142,7 @@ def main():
         add_reasoning=args.reasoning,
         reasoning_depth=args.reasoning_depth,
         reasoning_format=args.reasoning_format,
-        use_variable_grid=use_variable_grid,
+        use_variable_grid=args.use_variable_grid,
         min_width=args.min_width,
         min_height=args.min_height,
         max_width=args.max_width,
