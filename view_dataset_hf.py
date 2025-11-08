@@ -11,7 +11,7 @@ from datasets import load_from_disk
 import numpy as np
 
 from render_utils import render_ascii, render_graphical
-from pretrain_utils import get_positions_from_state
+from pretrain_utils import get_positions_from_state, get_actual_grid_size, is_padded_cell
 
 
 def parse_indices(indices_str: str, dataset_size: int) -> list:
@@ -86,6 +86,35 @@ def show_statistics(dataset, split_name: str):
     print(f"State array dtype: {state_arr.dtype}")
     print(f"Action dtype: {type(sample['action']).__name__}")
     
+    # Check for padded cells
+    # Try to get from metadata first, then fall back to detection
+    actual_width = None
+    actual_height = None
+    if 'metadata' in sample and isinstance(sample['metadata'], dict):
+        actual_width = sample['metadata'].get('actual_width')
+        actual_height = sample['metadata'].get('actual_height')
+    
+    # If not in metadata, detect from state
+    if actual_width is None or actual_height is None:
+        detected_height, detected_width = get_actual_grid_size(state_arr)
+        actual_width = detected_width
+        actual_height = detected_height
+    
+    padded_height, padded_width = state_arr.shape[:2]
+    if actual_height < padded_height or actual_width < padded_width:
+        print(f"\nPadded grid detected:")
+        print(f"  Actual grid size: {actual_width}x{actual_height}")
+        print(f"  Padded grid size: {padded_width}x{padded_height}")
+        # Count padded cells
+        padded_count = sum(
+            1 for y in range(padded_height) for x in range(padded_width)
+            if is_padded_cell(state_arr, y, x)
+        )
+        total_cells = padded_height * padded_width
+        print(f"  Padded cells: {padded_count}/{total_cells} ({100*padded_count/total_cells:.1f}%)")
+    else:
+        print(f"\nGrid size: {actual_width}x{actual_height} (no padding)")
+    
     print(f"{'='*70}\n")
 
 
@@ -158,6 +187,26 @@ def main():
         
         print(f"\nSample {idx}:")
         print("-"*70)
+        
+        # Show grid size info if padded
+        # Try to get from metadata first, then fall back to detection
+        actual_width = None
+        actual_height = None
+        if 'metadata' in sample and isinstance(sample['metadata'], dict):
+            actual_width = sample['metadata'].get('actual_width')
+            actual_height = sample['metadata'].get('actual_height')
+        
+        # If not in metadata, detect from state
+        if actual_width is None or actual_height is None:
+            detected_height, detected_width = get_actual_grid_size(state)
+            actual_width = detected_width
+            actual_height = detected_height
+        
+        padded_height, padded_width = state.shape[:2]
+        if actual_height < padded_height or actual_width < padded_width:
+            print(f"Grid: {actual_width}x{actual_height} (padded to {padded_width}x{padded_height})")
+        else:
+            print(f"Grid: {actual_width}x{actual_height} (no padding)")
 
         sample_reasoning = None
         if 'reasoning' in sample:

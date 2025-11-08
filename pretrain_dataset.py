@@ -19,6 +19,7 @@ from pretrain_utils import (
     get_expert_action_astar,
     get_positions_from_state,
     get_safe_actions,
+    pad_state,
     state_from_positions,
 )
 from reasoning_dsl import generate_reasoning_text, reasoning_to_embeddings
@@ -152,14 +153,19 @@ def generate_pretraining_dataset(
     seed: Optional[int] = None,
     add_reasoning: bool = False,
     reasoning_depth: int = 1,
-    reasoning_format: str = 'compact'
+    reasoning_format: str = 'compact',
+    use_variable_grid: bool = False,
+    min_width: Optional[int] = None,
+    min_height: Optional[int] = None,
+    max_width: Optional[int] = None,
+    max_height: Optional[int] = None
 ) -> List[Dict]:
     """
     Generate pretraining dataset with expert labels and optional failure samples.
     
     Args:
         num_samples: Number of unique states to generate
-        width, height: Grid dimensions
+        width, height: Output grid dimensions (padded size)
         min_length, max_length: Snake length range
         use_astar: Use A* for labels (vs heuristic)
         temperature: Softmax temperature for soft labels
@@ -171,14 +177,57 @@ def generate_pretraining_dataset(
         add_reasoning: Add CoT-style reasoning text before action (RSM mode)
         reasoning_depth: Lookahead depth for reasoning (1-3)
         reasoning_format: 'compact' or 'verbose'
+        use_variable_grid: Use variable grid sizes (True) or fixed grid sizes (False)
+        min_width, min_height: Minimum actual grid dimensions (for variable grid sizes)
+        max_width, max_height: Maximum actual grid dimensions (for variable grid sizes)
+            If None, uses width/height (fixed size)
     
     Returns:
         List of dicts with 'state', 'action', 'action_probs', 'metadata', and optionally 'reasoning'
     """
+    # Smallest sensible game grid area. Equivalent to 8x8 pixels.
+    min_grid_area = 64
+
+    # Maximum snake length as a factor of the grid area.
+    max_snake_length_factor = 0.5
+
     if seed is not None:
         random.seed(seed)
         np.random.seed(seed)
     
+    if use_variable_grid:
+        # Set defaults for variable grid
+        actual_min_width = min_width if min_width is not None else width
+        actual_min_height = min_height if min_height is not None else height
+        actual_max_width = max_width if max_width is not None else width
+        actual_max_height = max_height if max_height is not None else height
+        
+        # Ensure min <= max and max <= output size
+        actual_min_width = min(actual_min_width, width)
+        actual_min_height = min(actual_min_height, height)
+        actual_max_width = min(actual_max_width, width)
+        actual_max_height = min(actual_max_height, height)
+        
+        if actual_min_width > actual_max_width or actual_min_height > actual_max_height:
+            raise ValueError(
+                f"Invalid grid size range: "
+                f"width [{actual_min_width}, {actual_max_width}], "
+                f"height [{actual_min_height}, {actual_max_height}]"
+            )
+    else:
+        # Fixed grid size
+        actual_min_width = actual_max_width = width
+        actual_min_height = actual_max_height = height
+
+    actual_min_grid_area = actual_min_width * actual_min_height
+    
+    if actual_min_grid_area < min_grid_area:
+        raise ValueError(
+            f"Grid area is too small: "
+            f"{actual_min_width} * {actual_min_height} < {min_grid_area}\n"
+            f"Minimum grid area is {min_grid_area} (equivalent to 8x8 pixels)"
+        )
+
     dataset = []
     attempts = 0
     max_attempts = num_samples * 10
@@ -188,28 +237,39 @@ def generate_pretraining_dataset(
     while len(dataset) < num_samples and attempts < max_attempts:
         attempts += 1
         
-        # Generate random state
-        state_dict = generate_random_state(width, height, min_length, max_length)
+        # Randomly select actual grid size if variable
+        if use_variable_grid:
+            actual_width = random.randint(actual_min_width, actual_max_width)
+            actual_height = random.randint(actual_min_height, actual_max_height)
+        else:
+            actual_width = width
+            actual_height = height
+
+        # Compute the maximum snake length based on the grid area.
+        max_snake_length = min(max_length, int(actual_width * actual_height * max_snake_length_factor))
+
+        # Generate random state on actual grid size
+        state_dict = generate_random_state(actual_width, actual_height, min_length, max_snake_length)
         if state_dict is None:
             continue
         
         snake_positions = state_dict['snake_positions']
         food_pos = state_dict['food_pos']
         
-        # Check if there are safe actions
-        safe_actions = get_safe_actions(snake_positions, width, height)
+        # Check if there are safe actions (using actual grid size)
+        safe_actions = get_safe_actions(snake_positions, actual_width, actual_height)
         if not safe_actions:
             continue  # Skip terminal states
         
-        # Get expert label
+        # Get expert label (using actual grid size)
         if use_astar:
             expert_action = get_expert_action_astar(
-                snake_positions, food_pos, width, height
+                snake_positions, food_pos, actual_width, actual_height
             )
             if expert_action is None:
                 # No path to food, use safest heuristic action
                 action_probs = get_action_distribution(
-                    snake_positions, food_pos, width, height,
+                    snake_positions, food_pos, actual_width, actual_height,
                     temperature=temperature, use_astar=False
                 )
                 expert_action = int(np.argmax(action_probs))
@@ -220,20 +280,24 @@ def generate_pretraining_dataset(
         else:
             # Soft labels from heuristic
             action_probs = get_action_distribution(
-                snake_positions, food_pos, width, height,
+                snake_positions, food_pos, actual_width, actual_height,
                 temperature=temperature, use_astar=False
             )
             expert_action = int(np.argmax(action_probs))
         
-        # Convert to state array
-        state = state_from_positions(snake_positions, food_pos, width, height)
+        # Convert to state array (using actual grid size)
+        state = state_from_positions(snake_positions, food_pos, actual_width, actual_height)
         
-        # Generate reasoning text if requested
+        # Pad to output dimensions if needed
+        if actual_width < width or actual_height < height:
+            state = pad_state(state, width, height)
+        
+        # Generate reasoning text if requested (using actual grid size)
         reasoning_text = None
         reasoning_tokens = None
         if add_reasoning:
             reasoning_text = generate_reasoning_text(
-                snake_positions, food_pos, width, height, expert_action,
+                snake_positions, food_pos, actual_width, actual_height, expert_action,
                 lookahead_depth=reasoning_depth, format=reasoning_format
             )
             reasoning_tokens = reasoning_to_embeddings(reasoning_text, max_length=128)
@@ -247,7 +311,11 @@ def generate_pretraining_dataset(
                 'snake_length': len(snake_positions),
                 'distance_to_food': abs(snake_positions[0][0] - food_pos[0]) + 
                                    abs(snake_positions[0][1] - food_pos[1]),
-                'num_safe_actions': len(safe_actions)
+                'num_safe_actions': len(safe_actions),
+                'actual_width': actual_width,
+                'actual_height': actual_height,
+                'padded_width': width,
+                'padded_height': height
             }
         }
         
@@ -277,7 +345,11 @@ def generate_pretraining_dataset(
             state = base_sample['state']
             snake_positions, food_pos = get_positions_from_state(state)
             
-            safe_actions = get_safe_actions(snake_positions, width, height)
+            # Get actual grid size from metadata (fallback to width/height if not present)
+            actual_width = base_sample['metadata'].get('actual_width', width)
+            actual_height = base_sample['metadata'].get('actual_height', height)
+            
+            safe_actions = get_safe_actions(snake_positions, actual_width, actual_height)
             if not safe_actions:
                 continue
             
@@ -297,7 +369,7 @@ def generate_pretraining_dataset(
             # Generate reasoning for failure samples too (shows wrong reasoning)
             if add_reasoning:
                 reasoning_text = generate_reasoning_text(
-                    snake_positions, food_pos, width, height, random_action,
+                    snake_positions, food_pos, actual_width, actual_height, random_action,
                     lookahead_depth=reasoning_depth, format=reasoning_format
                 )
                 reasoning_tokens = reasoning_to_embeddings(reasoning_text, max_length=128)
@@ -340,8 +412,11 @@ def generate_pretraining_dataset(
             if add_reasoning:
                 state = base_sample['state']
                 snake_positions, food_pos = get_positions_from_state(state)
+                # Get actual grid size from metadata (fallback to width/height if not present)
+                actual_width = base_sample['metadata'].get('actual_width', width)
+                actual_height = base_sample['metadata'].get('actual_height', height)
                 reasoning_text = generate_reasoning_text(
-                    snake_positions, food_pos, width, height, random_action,
+                    snake_positions, food_pos, actual_width, actual_height, random_action,
                     lookahead_depth=reasoning_depth, format=reasoning_format
                 )
                 reasoning_tokens = reasoning_to_embeddings(reasoning_text, max_length=128)
@@ -391,8 +466,11 @@ def generate_pretraining_dataset(
 
                 if add_reasoning:
                     snake_positions, food_pos = get_positions_from_state(aug_state)
+                    # Get actual grid size from metadata (fallback to width/height if not present)
+                    actual_width = sample['metadata'].get('actual_width', width)
+                    actual_height = sample['metadata'].get('actual_height', height)
                     reasoning_text = generate_reasoning_text(
-                        snake_positions, food_pos, width, height, aug_action,
+                        snake_positions, food_pos, actual_width, actual_height, aug_action,
                         lookahead_depth=reasoning_depth, format=reasoning_format
                     )
                     reasoning_tokens = reasoning_to_embeddings(reasoning_text, max_length=128)
@@ -402,8 +480,9 @@ def generate_pretraining_dataset(
                 augmented_dataset.append(augmented_sample)
         
         print(f"Dataset size after augmentation: {len(augmented_dataset)}")
-    
-    return augmented_dataset
+        return augmented_dataset
+    else:
+        return dataset
 
 
 def save_dataset(dataset: List[Dict], filepath: str):

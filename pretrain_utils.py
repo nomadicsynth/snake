@@ -399,15 +399,117 @@ AUGMENTATIONS = [
 ]
 
 
+# Special padding value to mark padded cells (outside normal RGB range [0, 1])
+PADDING_VALUE = -1.0
+
+
+def pad_state(
+    state: np.ndarray,
+    target_width: int,
+    target_height: int,
+    pad_value: float = PADDING_VALUE
+) -> np.ndarray:
+    """
+    Pad a state array to target dimensions.
+    
+    Args:
+        state: (H, W, 3) state array
+        target_width: Target width
+        target_height: Target height
+        pad_value: Value to use for padding (default: PADDING_VALUE = -1.0 to mark padded cells)
+    
+    Returns:
+        Padded state array of shape (target_height, target_width, 3)
+    """
+    current_height, current_width, channels = state.shape
+    
+    if current_height > target_height or current_width > target_width:
+        raise ValueError(
+            f"Cannot pad: state is {current_height}x{current_width}, "
+            f"target is {target_height}x{target_width}"
+        )
+    
+    if current_height == target_height and current_width == target_width:
+        return state.copy()
+    
+    # Create padded state with special padding value
+    padded = np.full((target_height, target_width, channels), pad_value, dtype=state.dtype)
+    
+    # Place original state in top-left corner
+    padded[:current_height, :current_width] = state
+    
+    return padded
+
+
+def is_padded_cell(state: np.ndarray, row: int, col: int) -> bool:
+    """
+    Check if a cell is a padded cell (outside the actual game grid).
+    
+    Args:
+        state: (H, W, 3) state array
+        row: Row index
+        col: Column index
+    
+    Returns:
+        True if the cell is padded, False otherwise
+    """
+    if row < 0 or col < 0 or row >= state.shape[0] or col >= state.shape[1]:
+        return False
+    
+    # Check if all channels have the padding value (more robust)
+    return np.all(state[row, col] == PADDING_VALUE)
+
+
+def get_actual_grid_size(state: np.ndarray) -> Tuple[int, int]:
+    """
+    Get the actual grid size from a padded state by finding the maximum extent
+    of non-padded cells.
+    
+    A cell is padded if all channels equal PADDING_VALUE (-1.0).
+    Empty game cells have all zeros [0, 0, 0] and are NOT padded.
+    
+    Args:
+        state: (H, W, 3) state array (may be padded)
+    
+    Returns:
+        (actual_height, actual_width) tuple
+    """
+    height, width, _ = state.shape
+    
+    # A cell is padded if ALL channels have PADDING_VALUE
+    # Empty game cells have [0, 0, 0] which is != PADDING_VALUE
+    padded_mask = np.all(state == PADDING_VALUE, axis=2)
+    non_padded_mask = ~padded_mask
+    
+    if not np.any(non_padded_mask):
+        # All cells are padded, return full size
+        return height, width
+    
+    # Find bounding box of non-padded cells (including empty game cells)
+    # This gives us the actual grid dimensions
+    rows_with_content = np.where(np.any(non_padded_mask, axis=1))[0]
+    cols_with_content = np.where(np.any(non_padded_mask, axis=0))[0]
+    
+    if len(rows_with_content) == 0 or len(cols_with_content) == 0:
+        return height, width
+    
+    # Get the maximum extent (last row/col with non-padded content + 1)
+    actual_height = rows_with_content[-1] + 1
+    actual_width = cols_with_content[-1] + 1
+    
+    return actual_height, actual_width
+
+
 def get_positions_from_state(
     state: np.ndarray
 ) -> Tuple[List[Tuple[int, int]], Tuple[int, int]]:
     """
     Extract snake positions and food position from state array.
     Inverse of state_from_positions.
+    Ignores padded cells (cells with PADDING_VALUE).
     
     Args:
-        state: (H, W, 3) state array
+        state: (H, W, 3) state array (may be padded)
     
     Returns:
         snake_positions: List of (row, col) tuples
@@ -415,18 +517,24 @@ def get_positions_from_state(
     """
     height, width, _ = state.shape
     
-    # Extract food position (red channel)
-    food_positions = np.argwhere(state[:, :, 0] > 0)
+    # Create mask to exclude padded cells
+    # A cell is padded if all channels have PADDING_VALUE
+    non_padded_mask = np.any(state != PADDING_VALUE, axis=2)
+    
+    # Extract food position (red channel > 0 and not padded)
+    food_mask = (state[:, :, 0] > 0) & non_padded_mask
+    food_positions = np.argwhere(food_mask)
     if len(food_positions) == 0:
         raise ValueError("No food found in state")
     food_pos = tuple(food_positions[0])
     
-    # Extract snake positions (green channel has values)
+    # Extract snake positions (green channel has values > 0 and not padded)
     # Higher green value = closer to head
     snake_cells = []
     for y in range(height):
         for x in range(width):
-            if state[y, x, 1] > 0:
+            # Check if cell is not padded and has green value > 0
+            if non_padded_mask[y, x] and state[y, x, 1] > 0:
                 snake_cells.append(((y, x), state[y, x, 1]))
     
     # Sort by green value (descending) to get head first

@@ -6,7 +6,7 @@ Provides ASCII and graphical rendering functions for visualizing game states.
 
 import numpy as np
 import matplotlib.pyplot as plt
-from pretrain_utils import get_positions_from_state
+from pretrain_utils import get_positions_from_state, is_padded_cell, PADDING_VALUE
 
 
 def render_ascii(state: np.ndarray, action: int, action_names: bool = False, reasoning: str = None):
@@ -29,6 +29,12 @@ def render_ascii(state: np.ndarray, action: int, action_names: bool = False, rea
     
     # Create grid
     grid = [['. ' for _ in range(width)] for _ in range(height)]
+    
+    # Mark padded cells
+    for y in range(height):
+        for x in range(width):
+            if is_padded_cell(state, y, x):
+                grid[y][x] = '⬛'  # Black square for padded cells
     
     # Place food
     food_y, food_x = food_pos
@@ -82,6 +88,12 @@ def render_graphical(state: np.ndarray, action: int, action_names: bool = False,
     # Create RGB grid
     grid = np.zeros((height, width, 3), dtype=np.float32)
     grid[:] = [0.1, 0.1, 0.1]  # Dark background
+    
+    # Mark padded cells with a distinct color (dark gray/blue)
+    for y in range(height):
+        for x in range(width):
+            if is_padded_cell(state, y, x):
+                grid[y, x] = [0.2, 0.2, 0.4]  # Dark blue-gray for padded cells
     
     # Place food (red)
     food_y, food_x = food_pos
@@ -141,6 +153,12 @@ def render_state_for_video(state: np.ndarray, moves: int = None, score: int = No
     # Create RGB grid
     grid = np.zeros((height, width, 3), dtype=np.float32)
     grid[:] = [0.9, 0.9, 0.9]  # Light background
+    
+    # Mark padded cells with a distinct color (light gray/blue)
+    for y in range(height):
+        for x in range(width):
+            if is_padded_cell(state, y, x):
+                grid[y, x] = [0.7, 0.7, 0.8]  # Light blue-gray for padded cells
     
     # Place food (red)
     food_y, food_x = food_pos

@@ -53,8 +53,13 @@ def main():
     )
     
     parser.add_argument('--num-samples', type=int, default=50000, help='Number of unique states to generate (before augmentation)')
-    parser.add_argument('--width', type=int, default=32, help='Grid width')
-    parser.add_argument('--height', type=int, default=32, help='Grid height')
+    parser.add_argument('--width', type=int, default=32, help='Output grid width (padded size)')
+    parser.add_argument('--height', type=int, default=32, help='Output grid height (padded size)')
+    parser.add_argument('--use-variable-grid', action='store_true', default=False, help='Use variable grid sizes (default: False)')
+    parser.add_argument('--min-width', type=int, default=None, help='Minimum actual grid width (for variable grid sizes)')
+    parser.add_argument('--min-height', type=int, default=None, help='Minimum actual grid height (for variable grid sizes)')
+    parser.add_argument('--max-width', type=int, default=None, help='Maximum actual grid width (for variable grid sizes)')
+    parser.add_argument('--max-height', type=int, default=None, help='Maximum actual grid height (for variable grid sizes)')
     parser.add_argument('--min-length', type=int, default=3, help='Minimum snake length')
     parser.add_argument('--max-length', type=int, default=30, help='Maximum snake length')
     parser.add_argument('--use-astar', action='store_true', default=True, help='Use A* for expert labels (default: True)')
@@ -84,7 +89,15 @@ def main():
     print("=" * 70)
     print(f"\nConfiguration:")
     print(f"  Samples: {args.num_samples:,}")
-    print(f"  Grid: {args.width}x{args.height}")
+    print(f"  Output grid: {args.width}x{args.height}")
+    if args.min_width is not None or args.min_height is not None or args.max_width is not None or args.max_height is not None:
+        min_w = args.min_width if args.min_width is not None else args.width
+        min_h = args.min_height if args.min_height is not None else args.height
+        max_w = args.max_width if args.max_width is not None else args.width
+        max_h = args.max_height if args.max_height is not None else args.height
+        print(f"  Actual grid: {min_w}-{max_w}x{min_h}-{max_h} (variable, padded to {args.width}x{args.height})")
+    else:
+        print(f"  Actual grid: {args.width}x{args.height} (fixed)")
     print(f"  Snake length: {args.min_length}-{args.max_length}")
     print(f"  Expert: {'A*' if args.use_astar else 'Heuristic'}")
     print(f"  Augmentation: {args.augment}")
@@ -104,6 +117,16 @@ def main():
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(args.seed)
     
+    # Validate variable grid arguments
+    if args.use_variable_grid:
+        if args.min_width is None or args.min_height is None:
+            raise ValueError("If using variable grid sizes, --min-width and --min-height must be specified")
+        if args.max_width is None or args.max_height is None:
+            args.max_width = args.width
+            args.max_height = args.height
+        if args.min_width > args.max_width or args.min_height > args.max_height:
+            raise ValueError("If using variable grid sizes, --min-width must be less than or equal to --max-width and --min-height must be less than or equal to --max-height")
+    
     # Prepare generation kwargs shared across batches
     gen_kwargs = dict(
         width=args.width,
@@ -119,6 +142,11 @@ def main():
         add_reasoning=args.reasoning,
         reasoning_depth=args.reasoning_depth,
         reasoning_format=args.reasoning_format,
+        use_variable_grid=use_variable_grid,
+        min_width=args.min_width,
+        min_height=args.min_height,
+        max_width=args.max_width,
+        max_height=args.max_height,
     )
 
     has_reasoning = args.reasoning
