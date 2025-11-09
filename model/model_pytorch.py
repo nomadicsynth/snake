@@ -239,12 +239,48 @@ class TransformerPolicy(PreTrainedModel):
             reasoning_embeds = reasoning_embeds + reasoning_pos_enc
 
             # Concatenate grid and reasoning tokens
-            tokens = torch.cat([reasoning_embeds, grid_tokens], dim=1)  # (batch, seq_len + H*W, d_model)
+            tokens = torch.cat([reasoning_embeds, grid_tokens], dim=1)  # (batch, seq_len + grid_len, d_model)
         else:
             tokens = grid_tokens
 
         # Transformer encoding
-        hidden = self.transformer(tokens, src_key_padding_mask=attention_mask)
+        # attention_mask: 1 for valid tokens, 0 for padded tokens
+        # src_key_padding_mask expects: True for padding (to mask), False for valid
+        if attention_mask is not None:
+            # Handle CNN append mode: attention_mask from data collator has shape (batch, reasoning_len + H*W)
+            # but tokens have shape (batch, reasoning_len + 2*H*W) when CNN append mode is used
+            # We need to expand the grid portion of the mask to match the doubled tokens
+            tokens_len = tokens.shape[1]
+            attention_mask_len = attention_mask.shape[1]
+            
+            # Check if we need to expand the mask (CNN append mode doubles the grid tokens)
+            if tokens_len != attention_mask_len:
+                # CNN append mode: expand the grid portion of the mask
+                if self.use_reasoning and reasoning_tokens is not None:
+                    # Split reasoning and grid portions
+                    reasoning_mask_len = reasoning_tokens.shape[1]
+                    reasoning_mask = attention_mask[:, :reasoning_mask_len]  # (batch, reasoning_len)
+                    grid_mask = attention_mask[:, reasoning_mask_len:]  # (batch, H*W)
+                    # Duplicate grid mask to match doubled tokens
+                    expanded_grid_mask = torch.cat([grid_mask, grid_mask], dim=1)  # (batch, 2*H*W)
+                    # Concatenate back
+                    attention_mask = torch.cat([reasoning_mask, expanded_grid_mask], dim=1)  # (batch, reasoning_len + 2*H*W)
+                else:
+                    # No reasoning tokens: just expand grid mask
+                    attention_mask = torch.cat([attention_mask, attention_mask], dim=1)  # (batch, 2*H*W)
+            
+            # Verify mask shape matches tokens shape
+            if attention_mask.shape[1] != tokens.shape[1]:
+                raise ValueError(
+                    f"Attention mask shape {attention_mask.shape[1]} does not match tokens shape {tokens.shape[1]}. "
+                    f"CNN mode: {self.cnn_mode if self.use_cnn else 'none'}, use_reasoning: {self.use_reasoning}"
+                )
+            
+            # Invert mask: True = mask out (padding), False = keep (valid)
+            src_key_padding_mask = (attention_mask == 0)
+        else:
+            src_key_padding_mask = None
+        hidden = self.transformer(tokens, src_key_padding_mask=src_key_padding_mask)
 
         # Pool for action prediction (mean over all tokens)
         pooled = hidden.mean(dim=1)  # (batch, d_model)

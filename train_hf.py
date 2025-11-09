@@ -20,6 +20,7 @@ from transformers.trainer_utils import get_last_checkpoint
 import wandb
 
 from model.model_pytorch import SnakeTransformerConfig, TransformerPolicy
+from pretrain_utils import PADDING_VALUE
 
 
 class SnakeDataCollator:
@@ -54,6 +55,25 @@ class SnakeDataCollator:
             reasoning = torch.tensor(np.stack([f['reasoning_tokens'] for f in features]), dtype=torch.long)
             batch['reasoning_tokens'] = reasoning
         
+        # Always create attention mask for padded cells
+        # Padded cells have all channels == PADDING_VALUE (-1.0)
+        # Create mask: 1 for valid cells, 0 for padded cells
+        batch_size, channels, height, width = states.shape
+        # Check if all channels are PADDING_VALUE
+        is_padded = torch.all(states == PADDING_VALUE, dim=1)  # (batch, H, W)
+        # Flatten to match token sequence: (batch, H*W)
+        grid_mask = (~is_padded).reshape(batch_size, height * width).float()
+        
+        # If reasoning tokens are present, prepend ones for reasoning tokens
+        if self.use_reasoning:
+            reasoning_len = reasoning.shape[1]
+            reasoning_mask = torch.ones(batch_size, reasoning_len, device=grid_mask.device)
+            attention_mask = torch.cat([reasoning_mask, grid_mask], dim=1)
+        else:
+            attention_mask = grid_mask
+        
+        batch['attention_mask'] = attention_mask
+        
         return batch
 
 
@@ -80,9 +100,10 @@ class SnakeTrainer(Trainer):
         obs = inputs['obs']
         labels = inputs['labels']
         reasoning_tokens = inputs.get('reasoning_tokens', None)
+        attention_mask = inputs.get('attention_mask', None)
         
         # Forward pass
-        logits, hidden = model(obs, reasoning_tokens=reasoning_tokens)
+        logits, hidden = model(obs, reasoning_tokens=reasoning_tokens, attention_mask=attention_mask)
         
         # For RSM models, extract action logits
         if self.use_reasoning:
@@ -96,7 +117,7 @@ class SnakeTrainer(Trainer):
         if return_outputs:
             return loss, {'logits': action_logits, 'hidden': hidden}
         return loss
-    
+
     def prediction_step(self, model, inputs, prediction_loss_only, ignore_keys=None):
         """
         Custom prediction step for evaluation
@@ -109,9 +130,12 @@ class SnakeTrainer(Trainer):
             reasoning_tokens = inputs.get('reasoning_tokens', None)
             if reasoning_tokens is not None:
                 reasoning_tokens = reasoning_tokens.to(device)
+            attention_mask = inputs.get('attention_mask', None)
+            if attention_mask is not None:
+                attention_mask = attention_mask.to(device)
             
             # Forward pass
-            logits, _ = model(obs, reasoning_tokens=reasoning_tokens)
+            logits, _ = model(obs, reasoning_tokens=reasoning_tokens, attention_mask=attention_mask)
             
             # Extract action logits for RSM models
             if self.use_reasoning:
