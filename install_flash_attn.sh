@@ -16,6 +16,16 @@ if ! command -v nvcc &> /dev/null; then
     echo ""
 fi
 
+# Check if ninja and wheel are installed, and install them if not
+if ! command -v ninja &> /dev/null; then
+    echo "Ninja not found, installing..."
+    pip install ninja
+fi
+if ! command -v wheel &> /dev/null; then
+    echo "Wheel not found, installing..."
+    pip install wheel
+fi
+
 # Install with --no-build-isolation flag
 pip install flash-attn --no-build-isolation --use-pep517
 
