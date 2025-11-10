@@ -8,7 +8,10 @@ Supports both standard and RSM (Reasoning Snake Model) modes.
 import argparse
 import time
 import os
+import json
 from pathlib import Path
+from datetime import datetime
+from tqdm.auto import tqdm
 
 import numpy as np
 import torch
@@ -167,11 +170,12 @@ def play_episode(env, model, device, render=True, delay=0.1, max_steps=500, rend
     if render and render_mode == "graphical":
         plt.ion()
         fig = plt.figure(figsize=(6, 6), dpi=100)
-    print("\n" + "="*50)
-    print("Starting new episode...")
-    if use_reasoning:
-        print("🧠 RSM mode active - generating reasoning...")
-    print("="*50)
+    if render:
+        tqdm.write("\n" + "="*50)
+        tqdm.write("Starting new episode...")
+        if use_reasoning:
+            tqdm.write("🧠 RSM mode active - generating reasoning...")
+        tqdm.write("="*50)
     
     while not done and steps < max_steps:
         frame = None
@@ -184,7 +188,6 @@ def play_episode(env, model, device, render=True, delay=0.1, max_steps=500, rend
             frames.append(frame)
         
         # Get action from policy
-        # State format now matches model format (R=food, G=snake, B=empty)
         # Use autoregressive reasoning generation for RSM models (untested)
         if use_reasoning:
             # Generate reasoning autoregressively
@@ -193,8 +196,8 @@ def play_episode(env, model, device, render=True, delay=0.1, max_steps=500, rend
             )
             
             if show_reasoning:
-                print(f"  🧠 Generated reasoning: {reasoning_text}")
-                print(f"     Action: {['UP', 'RIGHT', 'DOWN', 'LEFT'][action]}")
+                tqdm.write(f"  🧠 Generated reasoning: {reasoning_text}")
+                tqdm.write(f"     Action: {['UP', 'RIGHT', 'DOWN', 'LEFT'][action]}")
         else:
             # Standard forward pass without reasoning
             model.eval()
@@ -214,14 +217,15 @@ def play_episode(env, model, device, render=True, delay=0.1, max_steps=500, rend
         # Count apples
         if env.ate_last_step:
             apples_eaten += 1
-            print(f"\n🍎 Apple eaten! Total: {apples_eaten}, Score: {total_reward:.1f}")
+            if render:
+                tqdm.write(f"\n🍎 Apple eaten! Total: {apples_eaten}, Score: {total_reward:.1f}")
     
     if render and render_mode == "graphical":
         plt.ioff()
         plt.close(fig)
     
     if save_video and frames and video_path:
-        print(f"Saving video to {video_path}...")
+        tqdm.write(f"Saving video to {video_path}...")
         # Ensure all frames are the same size and divisible by macro_block_size=16
         target_shape = frames[0].shape
         # Make width and height divisible by 16
@@ -253,14 +257,12 @@ def play_episode(env, model, device, render=True, delay=0.1, max_steps=500, rend
         padded_frames = [pad_frame(frame) for frame in resized_frames]
         imageio.mimsave(video_path, padded_frames, fps=int(1/max(delay, 0.01)), macro_block_size=16)
     
-    print("\n" + "="*50)
-    print(f"Episode finished!")
-    print(f"  Steps: {steps}")
-    print(f"  Total Reward: {total_reward:.2f}")
-    print(f"  Apples Eaten: {apples_eaten}")
-    print(f"  Snake Length: {len(env.snake)}")
-    print("="*50)
-    return total_reward, steps, apples_eaten
+    return {
+        "apples_eaten": apples_eaten,
+        "total_reward": total_reward,
+        "snake_length": len(env.snake),
+        "steps": steps,
+    }
 
 
 def load_model(model_path, device='cpu'):
@@ -318,6 +320,138 @@ def load_model(model_path, device='cpu'):
         model = model.to(device)
         model.eval()
         return model, config
+
+
+def write_performance_report(
+    model_dir, all_rewards, all_steps, all_apples, config, args, device
+):
+    """
+    Write a performance report to the model directory.
+    
+    Args:
+        model_dir: Path to model directory
+        all_rewards: List of episode rewards
+        all_steps: List of episode steps
+        all_apples: List of apples eaten per episode
+        config: Model configuration
+        args: Command-line arguments
+        device: Device used for evaluation
+    """
+    model_dir = Path(model_dir)
+    model_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Calculate statistics
+    stats = {
+        "evaluation_date": datetime.now().isoformat(),
+        "model_path": str(model_dir),
+        "device": str(device),
+        "evaluation_settings": {
+            "episodes": args.episodes,
+            "env_width": args.env_width,
+            "env_height": args.env_height,
+            "max_steps": args.max_steps,
+            "seed": args.seed,
+            "use_reasoning": config.use_reasoning if hasattr(config, 'use_reasoning') else False,
+        },
+        "model_config": {
+            "d_model": config.d_model,
+            "num_layers": config.num_layers,
+            "num_heads": config.num_heads,
+            "use_cnn": config.use_cnn,
+            "cnn_mode": config.cnn_mode if hasattr(config, 'cnn_mode') else None,
+        },
+        "performance": {
+            "rewards": {
+                "mean": float(np.mean(all_rewards)),
+                "std": float(np.std(all_rewards)),
+                "min": float(np.min(all_rewards)),
+                "max": float(np.max(all_rewards)),
+                "median": float(np.median(all_rewards)),
+                "per_episode": [float(r) for r in all_rewards],
+            },
+            "apples_eaten": {
+                "mean": float(np.mean(all_apples)),
+                "std": float(np.std(all_apples)),
+                "min": int(np.min(all_apples)),
+                "max": int(np.max(all_apples)),
+                "median": float(np.median(all_apples)),
+                "per_episode": [int(a) for a in all_apples],
+            },
+            "steps_survived": {
+                "mean": float(np.mean(all_steps)),
+                "std": float(np.std(all_steps)),
+                "min": int(np.min(all_steps)),
+                "max": int(np.max(all_steps)),
+                "median": float(np.median(all_steps)),
+                "per_episode": [int(s) for s in all_steps],
+            },
+        },
+    }
+    
+    # Write JSON report
+    json_path = model_dir / "performance_report.json"
+    with open(json_path, 'w') as f:
+        json.dump(stats, f, indent=2)
+    print(f"\n📊 Performance report (JSON) saved to: {json_path}")
+    
+    # Write human-readable text report
+    txt_path = model_dir / "performance_report.txt"
+    with open(txt_path, 'w') as f:
+        f.write("="*70 + "\n")
+        f.write("MODEL PERFORMANCE REPORT\n")
+        f.write("="*70 + "\n\n")
+        
+        f.write(f"Evaluation Date: {stats['evaluation_date']}\n")
+        f.write(f"Model Path: {stats['model_path']}\n")
+        f.write(f"Device: {stats['device']}\n\n")
+        
+        f.write("Evaluation Settings:\n")
+        f.write("-" * 70 + "\n")
+        for key, value in stats['evaluation_settings'].items():
+            f.write(f"  {key}: {value}\n")
+        f.write("\n")
+        
+        f.write("Model Configuration:\n")
+        f.write("-" * 70 + "\n")
+        for key, value in stats['model_config'].items():
+            if value is not None:
+                f.write(f"  {key}: {value}\n")
+        f.write("\n")
+        
+        f.write("Performance Metrics:\n")
+        f.write("-" * 70 + "\n")
+        
+        f.write("\nRewards:\n")
+        f.write(f"  Mean:   {stats['performance']['rewards']['mean']:.2f}\n")
+        f.write(f"  Std:    {stats['performance']['rewards']['std']:.2f}\n")
+        f.write(f"  Min:    {stats['performance']['rewards']['min']:.2f}\n")
+        f.write(f"  Max:    {stats['performance']['rewards']['max']:.2f}\n")
+        f.write(f"  Median: {stats['performance']['rewards']['median']:.2f}\n")
+        
+        f.write("\nApples Eaten:\n")
+        f.write(f"  Mean:   {stats['performance']['apples_eaten']['mean']:.2f}\n")
+        f.write(f"  Std:    {stats['performance']['apples_eaten']['std']:.2f}\n")
+        f.write(f"  Min:    {stats['performance']['apples_eaten']['min']}\n")
+        f.write(f"  Max:    {stats['performance']['apples_eaten']['max']}\n")
+        f.write(f"  Median: {stats['performance']['apples_eaten']['median']:.2f}\n")
+        
+        f.write("\nSteps Survived:\n")
+        f.write(f"  Mean:   {stats['performance']['steps_survived']['mean']:.2f}\n")
+        f.write(f"  Std:    {stats['performance']['steps_survived']['std']:.2f}\n")
+        f.write(f"  Min:    {stats['performance']['steps_survived']['min']}\n")
+        f.write(f"  Max:    {stats['performance']['steps_survived']['max']}\n")
+        f.write(f"  Median: {stats['performance']['steps_survived']['median']:.2f}\n")
+        
+        f.write("\n" + "="*70 + "\n")
+        f.write("Per-Episode Breakdown:\n")
+        f.write("-" * 70 + "\n")
+        f.write(f"{'Episode':<10} {'Reward':<12} {'Apples':<10} {'Steps':<10}\n")
+        f.write("-" * 70 + "\n")
+        for i, (reward, apples, steps) in enumerate(zip(all_rewards, all_apples, all_steps), 1):
+            f.write(f"{i:<10} {reward:<12.2f} {int(apples):<10} {int(steps):<10}\n")
+        f.write("="*70 + "\n")
+    
+    print(f"📄 Performance report (text) saved to: {txt_path}")
 
 
 def main():
@@ -397,16 +531,13 @@ def main():
     all_steps = []
     all_apples = []
     
-    for ep in range(args.episodes):
-        print(f"\n{'='*70}")
-        print(f"Episode {ep + 1}/{args.episodes}")
-        print(f"{'='*70}")
+    for ep in tqdm(range(args.episodes), desc="Playing episodes"):
         video_path = None
         if args.save_video and args.render_mode == "graphical":
             video_dir = args.video_dir or os.path.dirname(args.model)
             os.makedirs(video_dir, exist_ok=True)
             video_path = os.path.join(video_dir, f"snake_episode_{ep+1}.mp4")
-        reward, steps, apples = play_episode(
+        stats = play_episode(
             env, model, device,
             render=not args.no_render,
             delay=args.delay,
@@ -417,9 +548,21 @@ def main():
             use_reasoning=use_reasoning,
             show_reasoning=args.show_reasoning
         )
-        all_rewards.append(reward)
-        all_steps.append(steps)
-        all_apples.append(apples)
+        all_rewards.append(stats["total_reward"])
+        all_steps.append(stats["steps"])
+        all_apples.append(stats["apples_eaten"])
+        # Add episode number to stats as the first key
+        stats = {"episode": ep + 1, **stats}
+        if args.no_render:
+            tqdm.write(json.dumps(stats, indent=None))
+        else:
+            tqdm.write("\n" + "="*50)
+            tqdm.write(f"Episode {stats['episode']} finished!")
+            tqdm.write(f"  Steps: {stats['steps']}")
+            tqdm.write(f"  Total Reward: {stats['total_reward']:.2f}")
+            tqdm.write(f"  Apples Eaten: {stats['apples_eaten']}")
+            tqdm.write(f"  Snake Length: {stats['snake_length']}")
+            tqdm.write("="*50)
     
     # Print summary statistics
     print("\n" + "="*70)
@@ -443,6 +586,11 @@ def main():
     print(f"  Max:  {int(np.max(all_steps))}")
     print("="*70)
     print()
+    
+    # Write performance report to model directory
+    write_performance_report(
+        args.model, all_rewards, all_steps, all_apples, config, args, device
+    )
 
 
 if __name__ == "__main__":
