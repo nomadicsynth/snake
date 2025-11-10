@@ -52,28 +52,25 @@ def main():
         description="Generate Snake dataset in HuggingFace format"
     )
     
-    parser.add_argument('--num-samples', type=int, default=50000, help='Number of unique states to generate (before augmentation)')
+    parser.add_argument('--num-samples', type=int, default=1000000, help='Number of unique states to generate (before augmentation)')
     parser.add_argument('--width', type=int, default=32, help='Output grid width (padded size)')
     parser.add_argument('--height', type=int, default=32, help='Output grid height (padded size)')
-    parser.add_argument('--use-variable-grid', action='store_true', default=False, help='Use variable grid sizes (default: False)')
+    parser.add_argument('--use-variable-grid', action='store_true', help='Use variable grid sizes')
     parser.add_argument('--min-width', type=int, default=None, help='Minimum actual grid width (for variable grid sizes)')
     parser.add_argument('--min-height', type=int, default=None, help='Minimum actual grid height (for variable grid sizes)')
     parser.add_argument('--max-width', type=int, default=None, help='Maximum actual grid width (for variable grid sizes)')
     parser.add_argument('--max-height', type=int, default=None, help='Maximum actual grid height (for variable grid sizes)')
     parser.add_argument('--min-length', type=int, default=3, help='Minimum snake length')
-    parser.add_argument('--max-length', type=int, default=30, help='Maximum snake length')
-    parser.add_argument('--use-astar', action='store_true', default=True, help='Use A* for expert labels (default: True)')
-    parser.add_argument('--no-astar', dest='use_astar', action='store_false', help='Use heuristics instead of A*')
+    parser.add_argument('--max-length', type=int, default=100, help='Maximum snake length')
     parser.add_argument('--temperature', type=float, default=0.5, help='Temperature for soft labels')
-    parser.add_argument('--augment', action='store_true', default=True, help='Apply 8x geometric augmentation (default: True)')
-    parser.add_argument('--no-augment', dest='augment', action='store_false', help='Skip augmentation')
+    parser.add_argument('--augment', action='store_true', help='Apply 8x geometric augmentation')
     parser.add_argument('--failure-ratio', type=float, default=0.0, help='Ratio of random/failure action samples to add')
     parser.add_argument('--epsilon-greedy-ratio', type=float, default=0.0, help='Ratio of epsilon-greedy samples to add')
     parser.add_argument('--epsilon', type=float, default=0.3, help='Epsilon value for epsilon-greedy sampling')
     parser.add_argument('--output', type=str, default='snake_dataset_hf', help='Output directory path')
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
     parser.add_argument('--val-split', type=float, default=0.1, help='Validation split fraction')
-    parser.add_argument('--batch-size', type=int, default=10000, help='Batch size for streamed Arrow writing')
+    parser.add_argument('--batch-size', type=int, default=1000, help='Batch size for streamed Arrow writing')
     
     # Reasoning Snake Model (RSM) parameters
     parser.add_argument('--reasoning', action='store_true', help='Add CoT-style reasoning before actions (RSM mode)')
@@ -99,8 +96,8 @@ def main():
     else:
         print(f"  Actual grid: {args.width}x{args.height} (fixed)")
     print(f"  Snake length: {args.min_length}-{args.max_length}")
-    print(f"  Expert: {'A*' if args.use_astar else 'Heuristic'}")
-    print(f"  Augmentation: {args.augment}")
+    print(f"  Expert: {'A*'}")
+    print(f"  Augmentation: {'Yes (8x)' if args.augment else 'No'}")
     if args.failure_ratio > 0:
         print(f"  Failure samples: {args.failure_ratio:.1%}")
     if args.epsilon_greedy_ratio > 0:
@@ -133,7 +130,7 @@ def main():
         height=args.height,
         min_length=args.min_length,
         max_length=args.max_length,
-        use_astar=args.use_astar,
+        use_astar=True,
         temperature=args.temperature,
         augment=args.augment,
         failure_ratio=args.failure_ratio,
