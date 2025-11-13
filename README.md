@@ -4,6 +4,24 @@ A Transformer-based model for playing Snake, trained via supervised learning on 
 
 ## What Works
 
+- [-] Dataset generation
+  - [✓] Fixed-size datasets
+  - [?] Augmented datasets
+  - [✓] Variable grid size datasets
+  - [?] Reasoning datasets
+- [-] Training
+  - [✓] Training on fixed-grid-size datasets: achieves 97% accuracy on 1M 32x32 samples
+  - [x] Training on datasets with augmentation: training runs but breaks model
+  - [x] Training on variable grid size datasets: training runs but breaks model
+  - [?] Training on reasoning datasets: completely untested
+- [ ] RL fine-tuning of pretrained model
+  - [ ] vectorised environment for fast parallel training
+  - [ ] GRPO trainer for online RL fine-tuning
+- [✓] Gameplay
+  - [✓] Playing with a trained model
+  - [?] Playing with a trained model with reasoning
+
+
 ### Dataset Generation
 
 Generate training datasets from expert demonstrations:
